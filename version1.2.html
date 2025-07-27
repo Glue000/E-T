@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Assistant Vocal Amélioré</title>
+  <style>
+    body {
+      background: black;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    button {
+      margin: 10px;
+      padding: 12px 24px;
+      font-size: 1.1rem;
+      border: none;
+      border-radius: 8px;
+      background: #222;
+      color: white;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #555;
+    }
+    input[type=range] {
+      width: 150px;
+      vertical-align: middle;
+      margin-left: 8px;
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+      font-size: 1rem;
+    }
+    #status {
+      margin-top: 20px;
+      font-size: 1.2rem;
+    }
+    #errorLog {
+      margin-top: 20px;
+      color: red;
+      max-height: 100px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      text-align: left;
+      padding: 10px;
+      border: 1px solid #555;
+      background: #111;
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: black;
+      color: white;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 3em;
+      z-index: 9999;
+      flex-direction: column;
+    }
+    #clock {
+      font-size: 3em;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>E = T</h1>
+
+<button id="startBtn">Démarrer</button>
+<button id="overlayBtn">🕶️ Plein écran</button>
+
+<label>
+  🎵 Volume musique instrumentale:
+  <input type="range" id="bgVolume" min="0" max="1" step="0.01" value="0.2" />
+  <span id="bgVal">0.20</span>
+</label>
+
+<label>
+  🔉 Volume remplissage:
+  <input type="range" id="fillerVolume" min="0" max="1" step="0.01" value="0.3" />
+  <span id="fillerVal">0.30</span>
+</label>
+
+<label>
+  🔊 Volume mots-clés:
+  <input type="range" id="kwVolume" min="0" max="1" step="0.01" value="1" />
+  <span id="kwVal">1.00</span>
+</label>
+
+<div id="status">En attente...</div>
+<div id="errorLog"></div>
+
+<div id="overlay">
+  <div>🕶️ Assistant</div>
+  <div id="clock">--:--:--</div>
+  <button id="closeOverlayBtn">🟢 Ouvrir</button>
+</div>
+
+<audio id="clickSound" src="click.mp3" preload="auto"></audio>
+
+<script>
+// === Audio files and keywords ===
+const keywordMap = {
+  "merci remercie aimable amiable de rien s'il vous plaît ouais ok non mais daccord je": [
+    "M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3", "M/merci4.mp3",
+    "M/merci5.mp3", "M/merci6.mp3", "M/merci7.mp3", "M/merci8.mp3",
+    "M/merci9.mp3", "M/merci10.mp3", "M/merci11.mp3", "M/merci12.mp3",
+    "M/merci13.mp3", "M/merci14.mp3", "M/merci15.mp3", "M/merci16.mp3",
+    "M/merci17.mp3", "M/merci18.mp3"
+  ]
+};
+
+const fillerAudios = ["M/a1.mp3", "audio/a3.mp3", "audio/a4.mp3", "audio/a5.mp3"];
+const instrumentalMusic = [
+   "audio/Bet You Can.mp3",
+  "audio/Dance of the Sugar Plum Fairy.mp3",
+  "audio/Exhilarate.mp3",
+  "audio/Frost Waltz.mp3",
+  "audio/Gymnopedie No 1.mp3",
+  "audio/Gymnopedie No 2.mp3",
+  "audio/Happy Boy End Theme.mp3",
+  "audio/Hidden Agenda.mp3",
+  "audio/Latin Industries.mp3",
+  "audio/Pump.mp3"
+];
+
+// === Elements ===
+const startBtn = document.getElementById("startBtn");
+const overlayBtn = document.getElementById("overlayBtn");
+const closeOverlayBtn = document.getElementById("closeOverlayBtn");
+const statusDiv = document.getElementById("status");
+const errorLogDiv = document.getElementById("errorLog");
+
+const bgVolumeSlider = document.getElementById("bgVolume");
+const fillerVolumeSlider = document.getElementById("fillerVolume");
+const kwVolumeSlider = document.getElementById("kwVolume");
+
+const bgVal = document.getElementById("bgVal");
+const fillerVal = document.getElementById("fillerVal");
+const kwVal = document.getElementById("kwVal");
+
+const overlay = document.getElementById("overlay");
+const clock = document.getElementById("clock");
+const clickSound = document.getElementById("clickSound");
+
+// === Audio objects ===
+let recognition = null;
+let isRunning = false;
+
+let reactionAudio = null;
+let fillerAudio = new Audio();
+let instrumentalAudio = new Audio();
+
+fillerAudio.loop = false;
+instrumentalAudio.loop = false;
+
+// === Volume update ===
+function updateVolumes() {
+  instrumentalAudio.volume = +bgVolumeSlider.value;
+  fillerAudio.volume = +fillerVolumeSlider.value;
+  if (reactionAudio) reactionAudio.volume = +kwVolumeSlider.value;
+  
+  bgVal.textContent = (+bgVolumeSlider.value).toFixed(2);
+  fillerVal.textContent = (+fillerVolumeSlider.value).toFixed(2);
+  kwVal.textContent = (+kwVolumeSlider.value).toFixed(2);
+}
+
+bgVolumeSlider.oninput = updateVolumes;
+fillerVolumeSlider.oninput = updateVolumes;
+kwVolumeSlider.oninput = updateVolumes;
+
+// === Click sound for buttons ===
+function playClick() {
+  clickSound.currentTime = 0;
+  clickSound.play().catch(() => {});
+}
+
+[startBtn, overlayBtn, closeOverlayBtn].forEach(btn => {
+  btn.addEventListener("click", playClick);
+});
+
+// === Overlay toggle ===
+overlayBtn.onclick = () => {
+  overlay.style.display = "flex";
+};
+closeOverlayBtn.onclick = () => {
+  overlay.style.display = "none";
+};
+
+// === Clock update ===
+setInterval(() => {
+  const now = new Date();
+  clock.textContent =
+    now.getHours().toString().padStart(2, "0") + ":" +
+    now.getMinutes().toString().padStart(2, "0") + ":" +
+    now.getSeconds().toString().padStart(2, "0");
+}, 1000);
+
+// === Background music loop ===
+instrumentalAudio.onended = () => {
+  playNextInstrumental();
+};
+
+function playNextInstrumental() {
+  const next = instrumentalMusic[Math.floor(Math.random() * instrumentalMusic.length)];
+  instrumentalAudio.src = next;
+  instrumentalAudio.play().catch(() => {});
+  updateVolumes();
+}
+
+// === Filler audio loop ===
+fillerAudio.onended = () => {
+  if (!reactionAudio) {
+    playNextFiller();
+  }
+};
+
+function playNextFiller() {
+  const next = fillerAudios[Math.floor(Math.random() * fillerAudios.length)];
+  fillerAudio.src = next;
+  fillerAudio.play().catch(() => {});
+  updateVolumes();
+}
+
+// === Recognition ===
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SpeechRecognition) alert("Reconnaissance vocale non supportée.");
+
+recognition = new SpeechRecognition();
+recognition.lang = "fr-FR";
+recognition.continuous = true;
+recognition.interimResults = false;
+
+let lastDetected = "";
+
+recognition.onresult = (event) => {
+  const text = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+  if (text === lastDetected) return; // skip duplicate recognition
+  lastDetected = text;
+  statusDiv.textContent = `Vous avez dit : "${text}"`;
+  handleTranscript(text);
+};
+
+recognition.onerror = (e) => {
+  if (["not-allowed", "service-not-allowed"].includes(e.error)) {
+    statusDiv.textContent = "Permission micro refusée.";
+    stopRecognition();
+    startBtn.textContent = "Démarrer";
+    isRunning = false;
+  }
+};
+
+recognition.onend = () => {
+  if (isRunning) recognition.start();
+};
+
+// === Start/Stop recognition and audio ===
+startBtn.onclick = () => {
+  if (isRunning) {
+    stopRecognition();
+    stopAllAudio();
+    startBtn.textContent = "Démarrer";
+    statusDiv.textContent = "Arrêté.";
+    isRunning = false;
+  } else {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        stream.getTracks().forEach(t => t.stop());
+        startRecognition();
+        playNextInstrumental();
+        playNextFiller();
+        startBtn.textContent = "Arrêter";
+        statusDiv.textContent = "En écoute...";
+        isRunning = true;
+      })
+      .catch(err => {
+        alert("Micro non autorisé : " + err.message);
+      });
+  }
+};
+
+// === Helpers ===
+function startRecognition() {
+  recognition.start();
+}
+
+function stopRecognition() {
+  recognition.stop();
+}
+
+function stopAllAudio() {
+  if (reactionAudio) {
+    reactionAudio.pause();
+    reactionAudio = null;
+  }
+  fillerAudio.pause();
+  instrumentalAudio.pause();
+}
+
+// === Play reaction audio based on keyword ===
+function handleTranscript(text) {
+  for (const group in keywordMap) {
+    const keywords = group.split(" ");
+    if (keywords.some(kw => text.includes(kw))) {
+      playReaction(randomFrom(keywordMap[group]));
+      return;
+    }
+  }
+  // If no keyword, do nothing or optionally play filler again (not needed since filler loops)
+}
+
+function playReaction(src) {
+  if (reactionAudio) {
+    reactionAudio.pause();
+    reactionAudio.currentTime = 0;
+    reactionAudio = null;
+  }
+  reactionAudio = new Audio(src);
+  reactionAudio.volume = +kwVolumeSlider.value;
+  fillerAudio.pause();
+  reactionAudio.play().catch(() => {});
+  reactionAudio.onended = () => {
+    reactionAudio = null;
+    playNextFiller();
+  };
+  updateVolumes();
+}
+
+// === Utility ===
+function randomFrom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+</script>
+
+</body>
+</html>
