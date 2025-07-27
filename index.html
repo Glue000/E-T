@@ -34,233 +34,204 @@
       display: block;
       margin-top: 15px;
     }
-    #status {
+    #clock {
+      font-size: 2em;
       margin-top: 20px;
-      font-size: 1.2rem;
     }
   </style>
 </head>
 <body>
 
 <h1>E = T</h1>
-<button id="startBtn">Démarrer</button>
-<button id="skipInstrumentalBtn">⏭️ Passer Musique</button>
+
+<button onclick="playClick(); toggleOverlay()">🕶️ Plein écran</button>
+<button id="startBtn" onclick="playClick()">Démarrer</button>
+<button onclick="playClick(); playInstrumental()">⏭️ Changer Instrumental</button>
 
 <div class="vol-label">🔊 Volume Réaction :
-  <input type="range" id="reactionVolume" min="0" max="1" step="0.01" value="1" />
+  <input type="range" id="reactionVolume" min="0" max="1" step="0.01" value="1">
   <span id="reactionVal">1.00</span>
 </div>
 
 <div class="vol-label">🔉 Volume Filler :
-  <input type="range" id="fillerVolume" min="0" max="1" step="0.01" value="0.3" />
+  <input type="range" id="fillerVolume" min="0" max="1" step="0.01" value="0.3">
   <span id="fillerVal">0.30</span>
 </div>
 
-<div class="vol-label">🎼 Volume Musique Instrumentale :
-  <input type="range" id="musicVolume" min="0" max="1" step="0.01" value="0.1" />
+<div class="vol-label">🎼 Volume Instrumental :
+  <input type="range" id="musicVolume" min="0" max="1" step="0.01" value="0.1">
   <span id="musicVal">0.10</span>
 </div>
 
+<div class="vol-label">🔔 Volume Click :
+  <input type="range" id="clickVolume" min="0" max="1" step="0.01" value="1">
+  <span id="clickVal">1.00</span>
+</div>
+
 <div id="status">En attente...</div>
+<div id="clock">--:--:--</div>
+
+<audio id="clickSound" src="click.mp3" preload="auto"></audio>
 
 <script>
-  // === Sources audio ===
-  const reactionAudios = [
-    "M/merci1.mp3"
-    // Ajoute d'autres clips si besoin
-  ];
-  const fillerVoices = [
-    "M/merci2.mp3", "audio/a3.mp3", "audio/a4.mp3", "audio/a5.mp3"
-  ];
-  const fillerMusicTracks = [
-    "audio/Bet You Can.mp3"
-  ];
-  const instrumentalMusicTracks = [
-    "audio/Dance of the Sugar Plum Fairy.mp3",
-    "audio/Exhilarate.mp3",
-    "audio/Frost Waltz.mp3",
-    "audio/Gymnopedie No 1.mp3",
-    "audio/Gymnopedie No 2.mp3",
-    "audio/Happy Boy End Theme.mp3",
-    "audio/Hidden Agenda.mp3",
-    "audio/Latin Industries.mp3",
-    "audio/Pump.mp3"
-  ];
+const reactionAudios = ["M/merci1.mp3"];
+const fillerVoices = ["M/merci2.mp3"];
+const fillerMusicTracks = ["audio/Bet You Can.mp3"];
+const musicTracks = [
+  "audio/Exhilarate.mp3", "audio/Frost Waltz.mp3", "audio/Gymnopedie No 1.mp3",
+  "audio/Gymnopedie No 2.mp3", "audio/Happy Boy End Theme.mp3",
+  "audio/Hidden Agenda.mp3", "audio/Latin Industries.mp3", "audio/Pump.mp3"
+];
 
-  // === Éléments DOM ===
-  const startBtn = document.getElementById("startBtn");
-  const skipInstrBtn = document.getElementById("skipInstrumentalBtn");
-  const statusDiv = document.getElementById("status");
+const startBtn = document.getElementById("startBtn");
+const statusDiv = document.getElementById("status");
+const clock = document.getElementById("clock");
 
-  const reactionVolSlider = document.getElementById("reactionVolume");
-  const fillerVolSlider = document.getElementById("fillerVolume");
-  const musicVolSlider = document.getElementById("musicVolume");
+const reactionVol = document.getElementById("reactionVolume");
+const fillerVol = document.getElementById("fillerVolume");
+const musicVol = document.getElementById("musicVolume");
+const clickVol = document.getElementById("clickVolume");
 
-  const reactionVal = document.getElementById("reactionVal");
-  const fillerVal = document.getElementById("fillerVal");
-  const musicVal = document.getElementById("musicVal");
+const reactionVal = document.getElementById("reactionVal");
+const fillerVal = document.getElementById("fillerVal");
+const musicVal = document.getElementById("musicVal");
+const clickVal = document.getElementById("clickVal");
 
-  // === Audio objects ===
-  let recognition;
-  let isRunning = false;
+const clickSound = document.getElementById("clickSound");
 
-  let speakAudio = null;
-  let fillerVoice = new Audio();
-  let fillerMusic = new Audio();
-  let instrumentalMusic = new Audio();
+let speakAudio = null;
+let fillerVoice = new Audio();
+let fillerMusic = new Audio();
+let musicAudio = new Audio();
+let recognition;
+let isRunning = false;
 
-  // === Setup volumes and UI update ===
-  function updateVolumes() {
-    reactionVal.textContent = (+reactionVolSlider.value).toFixed(2);
-    fillerVal.textContent = (+fillerVolSlider.value).toFixed(2);
-    musicVal.textContent = (+musicVolSlider.value).toFixed(2);
+fillerVoice.loop = false;
+fillerMusic.loop = true;
+musicAudio.loop = false;
 
-    if (speakAudio) speakAudio.volume = +reactionVolSlider.value;
-    fillerVoice.volume = +fillerVolSlider.value;
-    fillerMusic.volume = +fillerVolSlider.value;
-    instrumentalMusic.volume = +musicVolSlider.value;
+reactionVol.oninput = () => reactionVal.textContent = (+reactionVol.value).toFixed(2);
+fillerVol.oninput = () => {
+  fillerVal.textContent = (+fillerVol.value).toFixed(2);
+  fillerVoice.volume = +fillerVol.value;
+  fillerMusic.volume = +fillerVol.value;
+};
+musicVol.oninput = () => {
+  musicVal.textContent = (+musicVol.value).toFixed(2);
+  musicAudio.volume = +musicVol.value;
+};
+clickVol.oninput = () => {
+  clickVal.textContent = (+clickVol.value).toFixed(2);
+  clickSound.volume = +clickVol.value;
+};
+
+function playClick() {
+  clickSound.currentTime = 0;
+  clickSound.volume = +clickVol.value;
+  clickSound.play().catch(() => {});
+}
+
+function playInstrumental() {
+  const src = musicTracks[Math.floor(Math.random() * musicTracks.length)];
+  musicAudio.src = src;
+  musicAudio.volume = +musicVol.value;
+  musicAudio.play().catch(() => {});
+}
+musicAudio.onended = playInstrumental;
+
+fillerVoice.onended = () => {
+  if (!speakAudio) loopFiller();
+};
+
+function loopFiller() {
+  if (speakAudio) return;
+  const voice = fillerVoices[Math.floor(Math.random() * fillerVoices.length)];
+  const music = fillerMusicTracks[Math.floor(Math.random() * fillerMusicTracks.length)];
+
+  fillerVoice.src = voice;
+  fillerVoice.volume = +fillerVol.value;
+  fillerVoice.play().catch(() => {});
+
+  fillerMusic.src = music;
+  fillerMusic.volume = +fillerVol.value;
+  fillerMusic.play().catch(() => {});
+}
+
+function playReaction() {
+  if (speakAudio) {
+    speakAudio.pause();
+    speakAudio = null;
   }
-  reactionVolSlider.oninput = updateVolumes;
-  fillerVolSlider.oninput = updateVolumes;
-  musicVolSlider.oninput = updateVolumes;
 
-  // === Loop filler voice + filler music ===
-  fillerVoice.loop = false;
-  fillerVoice.onended = () => {
-    if (!speakAudio) playNextFillerVoice();
+  fillerVoice.pause();
+  fillerMusic.pause();
+  musicAudio.pause();
+  stopRecognition();
+
+  speakAudio = new Audio(reactionAudios[Math.floor(Math.random() * reactionAudios.length)]);
+  speakAudio.volume = +reactionVol.value;
+  speakAudio.play().catch(() => {});
+
+  speakAudio.onended = () => {
+    speakAudio = null;
+    loopFiller();
+    playInstrumental();
+    playClick();
+    setTimeout(() => {
+      playClick();
+      startRecognition();
+    }, 3000);
+  };
+}
+
+function startRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return alert("❌ Reconnaissance non supportée");
+  recognition = new SR();
+  recognition.lang = "fr-FR";
+  recognition.continuous = true;
+  recognition.interimResults = false;
+
+  recognition.onresult = e => {
+    const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
+    statusDiv.textContent = `🗣️ "${text}"`;
+    playReaction();
   };
 
-  fillerMusic.loop = true;
+  recognition.onend = () => { if (isRunning) recognition.start(); };
+  recognition.start();
+}
 
-  function playNextFillerVoice() {
-    if (speakAudio) return; // ne pas jouer filler si réaction en cours
-    const src = fillerVoices[Math.floor(Math.random() * fillerVoices.length)];
-    fillerVoice.src = src;
-    fillerVoice.volume = +fillerVolSlider.value;
-    fillerVoice.play().catch(() => {});
-  }
-
-  function playFillerMusic() {
-    fillerMusic.src = fillerMusicTracks[0]; // un seul morceau pour filler music
-    fillerMusic.loop = true;
-    fillerMusic.volume = +fillerVolSlider.value;
-    fillerMusic.play().catch(() => {});
-  }
-
-  // === Instrumental music loop + bouton skip ===
-  instrumentalMusic.loop = false;
-  instrumentalMusic.onended = playNextInstrumental;
-
-  function playNextInstrumental() {
-    const src = instrumentalMusicTracks[Math.floor(Math.random() * instrumentalMusicTracks.length)];
-    instrumentalMusic.src = src;
-    instrumentalMusic.volume = +musicVolSlider.value;
-    instrumentalMusic.play().catch(() => {});
-  }
-
-  skipInstrBtn.onclick = () => {
-    playNextInstrumental();
-  };
-
-  // === Play reaction audio ===
-  function playReaction() {
-    if (speakAudio) {
-      speakAudio.pause();
-      speakAudio.currentTime = 0;
-    }
-    speakAudio = new Audio(reactionAudios[Math.floor(Math.random() * reactionAudios.length)]);
-    speakAudio.volume = +reactionVolSlider.value;
-
-    // Stop filler and instrumental music
+startBtn.onclick = () => {
+  isRunning = !isRunning;
+  if (isRunning) {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
+      s.getTracks().forEach(t => t.stop());
+      startRecognition();
+      loopFiller();
+      playInstrumental();
+      startBtn.textContent = "Arrêter";
+      statusDiv.textContent = "🎤 En écoute...";
+    }).catch(e => alert("❌ Micro refusé : " + e.message));
+  } else {
+    recognition?.stop();
     fillerVoice.pause();
     fillerMusic.pause();
-    instrumentalMusic.pause();
-
-    speakAudio.play().catch(() => {});
-    speakAudio.onended = () => {
-      speakAudio = null;
-      playNextFillerVoice();
-      playFillerMusic();
-      playNextInstrumental();
-    };
+    speakAudio?.pause();
+    musicAudio.pause();
+    startBtn.textContent = "Démarrer";
+    statusDiv.textContent = "En pause.";
   }
+};
 
-  // === Speech recognition ===
-  function startRecognition() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      alert("Reconnaissance vocale non supportée");
-      return;
-    }
-    recognition = new SR();
-    recognition.lang = "fr-FR";
-    recognition.continuous = true;
-    recognition.interimResults = false;
+function toggleOverlay() {
+  alert("Mode plein écran non implémenté ici.");
+}
 
-    recognition.onresult = (event) => {
-      const text = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
-      statusDiv.textContent = `🗣️ "${text}"`;
-      playReaction();
-    };
-
-    recognition.onerror = (event) => {
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        statusDiv.textContent = "Permission microphone refusée.";
-        stopRecognition();
-        isRunning = false;
-        startBtn.textContent = "Démarrer";
-      }
-    };
-
-    recognition.onend = () => {
-      if (isRunning) recognition.start();
-    };
-
-    recognition.start();
-  }
-
-  function stopRecognition() {
-    if (recognition) recognition.stop();
-  }
-
-  // === Start / Stop app ===
-  startBtn.onclick = () => {
-    if (isRunning) {
-      stopRecognition();
-      stopAllAudio();
-      startBtn.textContent = "Démarrer";
-      statusDiv.textContent = "Arrêté.";
-      isRunning = false;
-    } else {
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
-          stream.getTracks().forEach(t => t.stop());
-          startRecognition();
-          playNextFillerVoice();
-          playFillerMusic();
-          playNextInstrumental();
-          startBtn.textContent = "Arrêter";
-          statusDiv.textContent = "🎤 En écoute...";
-          isRunning = true;
-        })
-        .catch(err => {
-          alert("Micro non autorisé : " + err.message);
-        });
-    }
-  };
-
-  function stopAllAudio() {
-    if (speakAudio) {
-      speakAudio.pause();
-      speakAudio = null;
-    }
-    fillerVoice.pause();
-    fillerMusic.pause();
-    instrumentalMusic.pause();
-  }
-
-  // Mise à jour initiale des volumes
-  updateVolumes();
+setInterval(() => {
+  const now = new Date();
+  clock.textContent = now.toLocaleTimeString("fr-FR");
+}, 1000);
 </script>
 
 </body>
