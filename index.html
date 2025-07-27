@@ -1,74 +1,72 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Assistant Vocal v0.1</title>
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    background: #121212;
-    color: #eee;
-    font-family: Arial, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-  }
-  #login, #app {
-    display: none;
-    flex-direction: column;
-    background: #222;
-    padding: 30px;
-    border-radius: 10px;
-    width: 300px;
-    box-shadow: 0 0 10px #000;
-    text-align: center;
-  }
-  input[type="password"] {
-    padding: 10px;
-    font-size: 1.2rem;
-    margin-bottom: 15px;
-    border: none;
-    border-radius: 6px;
-    width: 100%;
-  }
-  button {
-    padding: 12px;
-    font-size: 1.1rem;
-    background: #008cff;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-  }
-  button:hover {
-    background: #006dcc;
-  }
-  #status {
-    margin-top: 20px;
-    min-height: 1.5em;
-  }
-  #version {
-    position: absolute;
-    bottom: 10px;
-    font-size: 0.9rem;
-    color: #888;
-    text-align: center;
-    width: 100%;
-    user-select: none;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Assistant Vocal v0.1</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: #121212;
+      color: #eee;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+    #login, #app {
+      display: none;
+      flex-direction: column;
+      background: #222;
+      padding: 30px;
+      border-radius: 12px;
+      width: 300px;
+      box-shadow: 0 0 10px #000;
+      text-align: center;
+    }
+    input[type="password"] {
+      padding: 10px;
+      font-size: 1.2rem;
+      margin-bottom: 15px;
+      border: none;
+      border-radius: 6px;
+      width: 100%;
+    }
+    button {
+      padding: 12px;
+      font-size: 1.1rem;
+      background: #008cff;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #006dcc;
+    }
+    #status {
+      margin-top: 20px;
+      min-height: 1.5em;
+    }
+    #version {
+      position: absolute;
+      bottom: 10px;
+      font-size: 0.9rem;
+      color: #888;
+      text-align: center;
+      width: 100%;
+      user-select: none;
+    }
+  </style>
 </head>
 <body>
 
 <div id="login">
   <h2>Code d'accès</h2>
-  <input type="password" id="pass" placeholder="Entrer le code">
+  <input type="password" id="pass" placeholder="Entrer le code" />
   <button onclick="checkPass()">Valider</button>
-  <div id="error" style="color:red; margin-top:10px; min-height:1.5em;"></div>
+  <div id="error" style="color:red; margin-top:10px;"></div>
 </div>
 
 <div id="app">
@@ -81,81 +79,82 @@
 <audio id="reactionAudio" src="M/merci1.mp3" preload="auto"></audio>
 
 <script>
-const login = document.getElementById("login");
-const app = document.getElementById("app");
-const pass = document.getElementById("pass");
-const error = document.getElementById("error");
+  const login = document.getElementById("login");
+  const app = document.getElementById("app");
+  const pass = document.getElementById("pass");
+  const error = document.getElementById("error");
+  const startBtn = document.getElementById("startBtn");
+  const statusDiv = document.getElementById("status");
+  const reactionAudio = document.getElementById("reactionAudio");
 
-function checkPass() {
-  if (pass.value === "8629") {
-    login.style.display = "none";
-    app.style.display = "flex";
-  } else {
-    error.textContent = "Code incorrect.";
-  }
-}
+  let running = false;
 
-login.style.display = "flex";
-
-const startBtn = document.getElementById("startBtn");
-const statusDiv = document.getElementById("status");
-const reactionAudio = document.getElementById("reactionAudio");
-
-let running = false;
-
-function startRecognition() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert("Non supporté");
-    return;
+  // Mot de passe simple
+  function checkPass() {
+    if (pass.value === "8629") {
+      login.style.display = "none";
+      app.style.display = "flex";
+    } else {
+      error.textContent = "Code incorrect.";
+    }
   }
 
-  const recognition = new SpeechRecognition();
-  recognition.lang = "fr-FR";
-  recognition.interimResults = false;
-  recognition.continuous = false;
+  login.style.display = "flex";
 
-  recognition.onstart = () => {
-    statusDiv.textContent = "🎤 En écoute...";
-  };
+  function startRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Reconnaissance non supportée.");
+      return;
+    }
 
-  recognition.onresult = e => {
-    const transcript = e.results[0][0].transcript;
-    statusDiv.textContent = `🗣️ "${transcript}"`;
-    reactionAudio.play();
-  };
+    const recognition = new SpeechRecognition();
+    recognition.lang = "fr-FR";
+    recognition.interimResults = false;
+    recognition.continuous = false;
 
-  recognition.onerror = e => {
-    statusDiv.textContent = "Erreur micro : " + e.error;
-    running = false;
-    startBtn.textContent = "Démarrer";
-  };
+    recognition.onstart = () => {
+      statusDiv.textContent = "🎤 En écoute...";
+    };
 
-  recognition.onend = () => {
-    if (running) {
-      setTimeout(startRecognition, 1000);
+    recognition.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      statusDiv.textContent = `🗣️ "${text}"`;
+      reactionAudio.play();
+    };
+
+    recognition.onend = () => {
+      if (running) {
+        setTimeout(() => startRecognition(), 500);
+      }
+    };
+
+    recognition.onerror = (e) => {
+      statusDiv.textContent = "Erreur : " + e.error;
+      running = false;
+      startBtn.textContent = "Démarrer";
+    };
+
+    recognition.start();
+  }
+
+  startBtn.onclick = () => {
+    if (!running) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
+        running = true;
+        startBtn.textContent = "Arrêter";
+        startRecognition();
+      }).catch(err => {
+        alert("Erreur micro : " + err.message);
+      });
+    } else {
+      running = false;
+      startBtn.textContent = "Démarrer";
+      statusDiv.textContent = "En pause.";
     }
   };
-
-  recognition.start();
-}
-
-startBtn.onclick = () => {
-  if (!running) {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
-      running = true;
-      startBtn.textContent = "Arrêter";
-      startRecognition();
-    }).catch(err => {
-      alert("Erreur : " + err.message);
-    });
-  } else {
-    running = false;
-    startBtn.textContent = "Démarrer";
-    statusDiv.textContent = "En pause.";
-  }
-};
 </script>
 
 </body>
 </html>
+
