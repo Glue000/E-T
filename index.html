@@ -3,71 +3,65 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Assistant Vocal Protégé</title>
+<title>Assistant Minimal</title>
 <style>
-  body, html {
-    margin: 0; padding: 0; height: 100%;
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
     background: #121212;
     color: #eee;
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-family: Arial, sans-serif;
     display: flex;
     justify-content: center;
     align-items: center;
   }
-  #passwordScreen, #mainApp {
-    background: #222;
-    padding: 30px 50px;
-    border-radius: 15px;
-    box-shadow: 0 0 15px #000;
-    text-align: center;
-    width: 320px;
-  }
-  #mainApp {
+  #login, #app {
     display: none;
     flex-direction: column;
+    background: #222;
+    padding: 30px;
+    border-radius: 10px;
+    width: 300px;
+    box-shadow: 0 0 10px #000;
+    text-align: center;
   }
   input[type="password"] {
-    font-size: 1.3rem;
     padding: 10px;
-    width: 100%;
-    border-radius: 8px;
-    border: none;
+    font-size: 1.2rem;
     margin-bottom: 15px;
-    box-sizing: border-box;
+    border: none;
+    border-radius: 6px;
+    width: 100%;
   }
   button {
-    font-size: 1.2rem;
-    padding: 12px 30px;
-    background-color: #008cff;
-    border: none;
-    border-radius: 10px;
+    padding: 12px;
+    font-size: 1.1rem;
+    background: #008cff;
     color: white;
+    border: none;
+    border-radius: 8px;
     cursor: pointer;
-    transition: background-color 0.25s ease;
-    user-select: none;
-    width: 100%;
   }
   button:hover {
-    background-color: #005fbb;
+    background: #006dcc;
   }
   #status {
-    margin-top: 25px;
-    font-weight: 600;
-    min-height: 2em;
-    color: #ccc;
+    margin-top: 20px;
+    min-height: 1.5em;
   }
 </style>
 </head>
 <body>
 
-<div id="passwordScreen">
-  <h2>Entrez le code</h2>
-  <input type="password" id="passwordInput" placeholder="Code secret" autocomplete="off" />
-  <button id="passwordBtn">Valider</button>
-  <div id="passwordMsg" style="color:#f66; margin-top:10px; min-height:1.5em;"></div>
+<div id="login">
+  <h2>Code d'accès</h2>
+  <input type="password" id="pass" placeholder="Entrer le code">
+  <button onclick="checkPass()">Valider</button>
+  <div id="error" style="color:red; margin-top:10px;"></div>
 </div>
 
-<div id="mainApp">
+<div id="app">
   <button id="startBtn">Démarrer</button>
   <div id="status">En attente...</div>
 </div>
@@ -75,127 +69,80 @@
 <audio id="reactionAudio" src="M/merci1.mp3" preload="auto"></audio>
 
 <script>
-(() => {
-  const PASSWORD_CODE = "8629";
+const login = document.getElementById("login");
+const app = document.getElementById("app");
+const pass = document.getElementById("pass");
+const error = document.getElementById("error");
 
-  const passwordScreen = document.getElementById("passwordScreen");
-  const mainApp = document.getElementById("mainApp");
-  const passwordInput = document.getElementById("passwordInput");
-  const passwordBtn = document.getElementById("passwordBtn");
-  const passwordMsg = document.getElementById("passwordMsg");
+function checkPass() {
+  if (pass.value === "8629") {
+    login.style.display = "none";
+    app.style.display = "flex";
+  } else {
+    error.textContent = "Code incorrect.";
+  }
+}
 
-  const startBtn = document.getElementById("startBtn");
-  const statusDiv = document.getElementById("status");
-  const reactionAudio = document.getElementById("reactionAudio");
+login.style.display = "flex";
 
-  let recognition = null;
-  let isRunning = false;
-  const isAndroid = /android/i.test(navigator.userAgent);
+const startBtn = document.getElementById("startBtn");
+const statusDiv = document.getElementById("status");
+const reactionAudio = document.getElementById("reactionAudio");
 
-  let errorCount = 0;
-  const maxErrorRetries = 3;
+let running = false;
 
-  passwordBtn.onclick = () => {
-    if (passwordInput.value === PASSWORD_CODE) {
-      passwordMsg.textContent = "";
-      passwordScreen.style.display = "none";
-      mainApp.style.display = "flex";
-      passwordInput.value = "";
-      passwordInput.blur();
-    } else {
-      passwordMsg.textContent = "Code incorrect";
-      passwordInput.value = "";
-      passwordInput.focus();
+function startRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert("Non supporté");
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = "fr-FR";
+  recognition.interimResults = false;
+  recognition.continuous = false;
+
+  recognition.onstart = () => {
+    statusDiv.textContent = "🎤 En écoute...";
+  };
+
+  recognition.onresult = e => {
+    const transcript = e.results[0][0].transcript;
+    statusDiv.textContent = `🗣️ "${transcript}"`;
+    reactionAudio.play();
+  };
+
+  recognition.onerror = e => {
+    statusDiv.textContent = "Erreur micro : " + e.error;
+    running = false;
+    startBtn.textContent = "Démarrer";
+  };
+
+  recognition.onend = () => {
+    if (running) {
+      setTimeout(startRecognition, 1000);
     }
   };
 
-  function startRecognition() {
-    if (recognition) {
-      recognition.abort();
-      recognition = null;
-    }
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Reconnaissance vocale non supportée par ce navigateur.");
-      return;
-    }
-    recognition = new SpeechRecognition();
-    recognition.lang = "fr-FR";
-    recognition.interimResults = false;
-    recognition.continuous = !isAndroid;
+  recognition.start();
+}
 
-    recognition.onstart = () => {
-      statusDiv.textContent = "🎤 En écoute...";
-      errorCount = 0;
-    };
-
-    recognition.onresult = (event) => {
-      const transcript = event.results[event.results.length -1][0].transcript.trim();
-      statusDiv.textContent = `🗣️ "${transcript}"`;
-      recognition.stop();
-      playReaction();
-    };
-
-    recognition.onerror = (event) => {
-      statusDiv.textContent = `Erreur : ${event.error}`;
-      console.warn("SpeechRecognition error:", event.error);
-
-      if (event.error === "network" || event.error === "not-allowed" || event.error === "service-not-allowed") {
-        errorCount++;
-        if (errorCount <= maxErrorRetries) {
-          statusDiv.textContent += ` (tentative ${errorCount}/${maxErrorRetries})`;
-          setTimeout(() => {
-            if (isRunning) recognition.start();
-          }, 2000);
-          return;
-        }
-      }
-      isRunning = false;
-      startBtn.textContent = "Démarrer";
-    };
-
-    recognition.onend = () => {
-      if (isRunning && reactionAudio.paused) {
-        recognition.start();
-      }
-    };
-
-    recognition.start();
+startBtn.onclick = () => {
+  if (!running) {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
+      running = true;
+      startBtn.textContent = "Arrêter";
+      startRecognition();
+    }).catch(err => {
+      alert("Erreur : " + err.message);
+    });
+  } else {
+    running = false;
+    startBtn.textContent = "Démarrer";
+    statusDiv.textContent = "En pause.";
   }
-
-  function stopRecognition() {
-    if (recognition) {
-      recognition.abort();
-      recognition = null;
-    }
-  }
-
-  function playReaction() {
-    reactionAudio.play().catch(() => {});
-    reactionAudio.onended = () => {
-      if (isRunning) startRecognition();
-    };
-  }
-
-  startBtn.onclick = () => {
-    if (!isRunning) {
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
-        isRunning = true;
-        startBtn.textContent = "Arrêter";
-        startRecognition();
-      }).catch((err) => {
-        alert("Micro refusé ou erreur : " + err.message);
-      });
-    } else {
-      isRunning = false;
-      stopRecognition();
-      reactionAudio.pause();
-      reactionAudio.currentTime = 0;
-      startBtn.textContent = "Démarrer";
-      statusDiv.textContent = "En pause.";
-    }
-  };
-})();
+};
 </script>
 
 </body>
