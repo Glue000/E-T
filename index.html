@@ -50,32 +50,9 @@
       font-size: 3em;
       margin-top: 20px;
     }
-    #authScreen {
-      position: fixed;
-      inset: 0;
-      background: black;
-      color: white;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 10000;
-    }
-    #authScreen input {
-      padding: 10px;
-      font-size: 1.2rem;
-      margin-top: 10px;
-      text-align: center;
-    }
   </style>
 </head>
-<body style="display:none">
-
-<div id="authScreen">
-  <h2>🔒 Entrez le code</h2>
-  <input type="password" id="passwordInput" placeholder="Code..." />
-  <button onclick="checkPassword()">Entrer</button>
-</div>
+<body>
 
 <h1>E = T</h1>
 <button onclick="playClick(); toggleOverlay()">🕶️ Plein écran</button>
@@ -108,25 +85,29 @@
 <audio id="clickSound" src="click.mp3" preload="auto"></audio>
 
 <script>
-// === PASSWORD ===
-function checkPassword() {
-  const input = document.getElementById("passwordInput").value;
-  if (input === "8629") {
-    document.getElementById("authScreen").style.display = "none";
-    document.body.style.display = "block";
-  } else {
-    alert("❌ Mauvais code.");
-  }
-}
-
 // === AUDIO SOURCES ===
-const reactionAudios = ["M/merci1.mp3"];
-const fillerVoices = ["M/merci2.mp3"];
-const fillerMusicTracks = ["audio/Bet You Can.mp3",];
+const reactionAudios = [
+  "M/merci1.mp3"
+];
+
+const fillerVoices = [
+ "M/merci2.mp3"
+];
+
+const fillerMusicTracks = [
+  "audio/Bet You Can.mp3"
+];
+
 const musicTracks = [
-   "audio/Dance of the Sugar Plum Fairy.mp3", "audio/Exhilarate.mp3",
-  "audio/Frost Waltz.mp3", "audio/Gymnopedie No 1.mp3", "audio/Gymnopedie No 2.mp3",
-  "audio/Happy Boy End Theme.mp3", "audio/Hidden Agenda.mp3", "audio/Latin Industries.mp3", "audio/Pump.mp3"
+  "audio/Dance of the Sugar Plum Fairy.mp3",
+  "audio/Exhilarate.mp3",
+  "audio/Frost Waltz.mp3",
+  "audio/Gymnopedie No 1.mp3",
+  "audio/Gymnopedie No 2.mp3",
+  "audio/Happy Boy End Theme.mp3",
+  "audio/Hidden Agenda.mp3",
+  "audio/Latin Industries.mp3",
+  "audio/Pump.mp3"
 ];
 
 // === ELEMENTS ===
@@ -151,7 +132,10 @@ let recognition;
 let isRunning = false;
 
 // === VOLUME ===
-reactVol.oninput = () => reactVal.textContent = (+reactVol.value).toFixed(2);
+reactVol.oninput = () => {
+  reactVal.textContent = (+reactVol.value).toFixed(2);
+  if(speakAudio) speakAudio.volume = +reactVol.value;
+};
 fillerVol.oninput = () => {
   fillerVal.textContent = (+fillerVol.value).toFixed(2);
   fillerVoice.volume = +fillerVol.value;
@@ -175,11 +159,15 @@ function playInstrumental() {
 
 // === FILLER VOICE LOOP ===
 fillerVoice.loop = false;
-fillerVoice.onended = () => { if (!speakAudio) loopFiller(); };
+fillerVoice.onended = () => {
+  if (!speakAudio) loopFiller();
+};
+
 fillerMusic.loop = true;
 
+// === play next filler voice + filler music track ===
 function loopFiller() {
-  if (speakAudio) return;
+  if (speakAudio) return; // ne pas jouer filler si réaction en cours
   const voice = fillerVoices[Math.floor(Math.random() * fillerVoices.length)];
   const bg = fillerMusicTracks[Math.floor(Math.random() * fillerMusicTracks.length)];
   fillerVoice.src = voice;
@@ -196,50 +184,77 @@ function playReaction() {
   if (speakAudio) {
     speakAudio.pause();
     speakAudio.currentTime = 0;
-    speakAudio = null;
   }
-  fillerVoice.pause();
-  fillerMusic.pause();
   speakAudio = new Audio(clip);
   speakAudio.volume = +reactVol.value;
+
+  // Stop filler and instrumental during reaction
+  fillerVoice.pause();
+  fillerMusic.pause();
+  musicAudio.pause();
+
   speakAudio.play().catch(() => {});
   speakAudio.onended = () => {
     speakAudio = null;
     loopFiller();
+    playInstrumental();
   };
 }
 
-// === SPEECH ===
+// === SPEECH RECOGNITION ===
 function startRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return alert("❌ SpeechRecognition non supporté");
+  if (!SR) {
+    alert("❌ SpeechRecognition non supporté");
+    return;
+  }
   recognition = new SR();
   recognition.lang = "fr-FR";
   recognition.continuous = true;
   recognition.interimResults = false;
+
   recognition.onresult = e => {
     const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
     statusDiv.textContent = `🗣️ "${text}"`;
     playReaction();
   };
-  recognition.onend = () => { if (isRunning) recognition.start(); };
+
+  recognition.onerror = e => {
+    if (["not-allowed", "service-not-allowed"].includes(e.error)) {
+      statusDiv.textContent = "Permission micro refusée.";
+      stopRecognition();
+      startBtn.textContent = "Démarrer";
+      isRunning = false;
+    }
+  };
+
+  recognition.onend = () => {
+    if (isRunning) recognition.start();
+  };
+
   recognition.start();
 }
 
-// === START / STOP ===
+function stopRecognition() {
+  recognition?.stop();
+}
+
+// === START/STOP ===
 startBtn.onclick = () => {
   isRunning = !isRunning;
   if (isRunning) {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
-      s.getTracks().forEach(t => t.stop());
-      startRecognition();
-      loopFiller();
-      playInstrumental();
-      startBtn.textContent = "Arrêter";
-      statusDiv.textContent = "🎤 En écoute...";
-    }).catch(e => alert("❌ Micro refusé : " + e.message));
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        stream.getTracks().forEach(t => t.stop());
+        startRecognition();
+        loopFiller();
+        playInstrumental();
+        startBtn.textContent = "Arrêter";
+        statusDiv.textContent = "🎤 En écoute...";
+      })
+      .catch(e => alert("❌ Micro refusé : " + e.message));
   } else {
-    recognition?.stop();
+    stopRecognition();
     fillerVoice.pause();
     fillerMusic.pause();
     speakAudio?.pause();
@@ -253,9 +268,13 @@ startBtn.onclick = () => {
 function toggleOverlay() {
   overlay.style.display = (overlay.style.display === "flex") ? "none" : "flex";
 }
+
 setInterval(() => {
   const now = new Date();
-  clock.textContent = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}`;
+  const hh = now.getHours().toString().padStart(2, "0");
+  const mm = now.getMinutes().toString().padStart(2, "0");
+  const ss = now.getSeconds().toString().padStart(2, "0");
+  clock.textContent = `${hh}:${mm}:${ss}`;
 }, 1000);
 
 // === BUTTON CLICK SOUND ===
