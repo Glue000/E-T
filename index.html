@@ -3,93 +3,69 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>E = T - Simple</title>
+<title>Assistant Vocal Simple</title>
 <style>
-  body[data-theme="dark"] {
+  body {
     background: black;
     color: white;
-  }
-  body[data-theme="light"] {
-    background: white;
-    color: black;
-  }
-  body {
     font-family: Arial, sans-serif;
-    margin: 0; padding: 20px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-height: 100vh;
-    transition: background-color 0.3s, color 0.3s;
+    text-align: center;
+    padding: 30px;
+  }
+  #passwordScreen, #mainUI {
+    max-width: 300px;
+    margin: auto;
+  }
+  input {
+    font-size: 1.3rem;
+    padding: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 10px;
   }
   button {
-    font-size: 1.2rem;
-    margin: 10px;
+    font-size: 1.3rem;
     padding: 10px 20px;
-    border-radius: 6px;
+    background: #333;
+    color: white;
     border: none;
+    border-radius: 8px;
     cursor: pointer;
   }
-  #passwordScreen {
-    position: fixed;
-    inset: 0;
-    background: inherit;
-    color: inherit;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 10px;
-  }
-  #passwordInput {
-    font-size: 1.5rem;
-    padding: 8px;
-    width: 150px;
-    text-align: center;
-  }
-  #passwordError {
-    color: red;
-    min-height: 1.2em;
-  }
-  #mainUI {
-    display: none;
-    flex-direction: column;
-    align-items: center;
+  button:hover {
+    background: #555;
   }
   #status {
-    margin-top: 30px;
+    margin-top: 25px;
     font-weight: bold;
     min-height: 1.5em;
   }
   #clock {
-    margin-top: 20px;
-    font-size: 2rem;
-    font-weight: bold;
+    margin-top: 15px;
+    font-size: 1.8rem;
     user-select: none;
   }
 </style>
 </head>
-<body data-theme="dark">
+<body>
 
-<div id="passwordScreen" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
-  <h2 id="pwTitle">Entrez le code</h2>
-  <input id="passwordInput" type="password" maxlength="4" inputmode="numeric" autocomplete="off" aria-label="Code secret" autofocus />
+<div id="passwordScreen">
+  <h2>Entrez le code</h2>
+  <input id="passwordInput" type="password" maxlength="4" autocomplete="off" autofocus placeholder="Code secret" />
   <button id="passwordSubmit">Valider</button>
-  <div id="passwordError" role="alert" aria-live="assertive"></div>
+  <div id="passwordError" style="color: red; min-height: 1.2em;"></div>
 </div>
 
-<div id="mainUI" role="main" aria-live="polite" aria-atomic="true">
-  <button id="startBtn" aria-pressed="false">Démarrer</button>
-  <button id="themeToggle" aria-pressed="false">Mode Clair</button>
+<div id="mainUI" style="display:none;">
+  <button id="startBtn">Démarrer</button>
   <div id="status">En attente...</div>
-  <div id="clock" aria-label="Horloge">--:--:--</div>
+  <div id="clock">--:--:--</div>
   <audio id="reactionAudio" src="M/merci1.mp3" preload="auto"></audio>
 </div>
 
 <script>
 (() => {
   const PASSWORD = "8629";
-
   const passwordScreen = document.getElementById("passwordScreen");
   const passwordInput = document.getElementById("passwordInput");
   const passwordSubmit = document.getElementById("passwordSubmit");
@@ -97,15 +73,12 @@
 
   const mainUI = document.getElementById("mainUI");
   const startBtn = document.getElementById("startBtn");
-  const themeToggle = document.getElementById("themeToggle");
   const statusDiv = document.getElementById("status");
   const clock = document.getElementById("clock");
   const reactionAudio = document.getElementById("reactionAudio");
 
   let recognition = null;
   let isRunning = false;
-
-  // Detect Android to disable continuous mode
   const isAndroid = /android/i.test(navigator.userAgent);
 
   function startRecognition() {
@@ -115,45 +88,38 @@
     }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-      alert("❌ Reconnaissance non supportée");
+      alert("Reconnaissance non supportée");
       return;
     }
     recognition = new SR();
     recognition.lang = "fr-FR";
-    recognition.continuous = !isAndroid; // Disable continuous on Android
+    recognition.continuous = !isAndroid;
     recognition.interimResults = false;
 
     recognition.onresult = (e) => {
-      const text = e.results[e.results.length - 1][0].transcript.trim();
+      const text = e.results[e.results.length -1][0].transcript.trim();
       statusDiv.textContent = `🗣️ "${text}"`;
       recognition.stop();
       playReaction();
     };
 
     recognition.onend = () => {
-      // On Android, wait for reaction audio to finish before restarting
-      if (isRunning && !reactionAudio.paused) return;
-      if (isRunning) recognition.start();
+      if (isRunning && reactionAudio.paused) {
+        recognition.start();
+        statusDiv.textContent = "🎤 En écoute...";
+      }
     };
 
     recognition.onerror = (e) => {
-      console.error("Recognition error:", e.error);
-      statusDiv.textContent = `Erreur micro: ${e.error}`;
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        alert("❌ Permission micro refusée");
-        isRunning = false;
-        startBtn.textContent = "Démarrer";
-        startBtn.setAttribute("aria-pressed", "false");
-        statusDiv.textContent = "Permission refusée";
-      }
+      statusDiv.textContent = `Erreur : ${e.error}`;
+      isRunning = false;
+      startBtn.textContent = "Démarrer";
     };
 
     try {
       recognition.start();
       statusDiv.textContent = "🎤 En écoute...";
-    } catch {
-      // Sometimes start throws if already started; ignore
-    }
+    } catch {}
   }
 
   function stopRecognition() {
@@ -166,22 +132,22 @@
   function playReaction() {
     reactionAudio.play().catch(() => {});
     reactionAudio.onended = () => {
-      if (isRunning) startRecognition();
+      if (isRunning) {
+        startRecognition();
+      }
     };
   }
 
   startBtn.onclick = () => {
     isRunning = !isRunning;
     if (isRunning) {
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
+      navigator.mediaDevices.getUserMedia({audio:true}).then(() => {
         startRecognition();
         startBtn.textContent = "Arrêter";
-        startBtn.setAttribute("aria-pressed", "true");
       }).catch(e => {
-        alert("❌ Micro refusé : " + e.message);
+        alert("Micro refusé : " + e.message);
         isRunning = false;
         startBtn.textContent = "Démarrer";
-        startBtn.setAttribute("aria-pressed", "false");
         statusDiv.textContent = "En pause.";
       });
     } else {
@@ -189,20 +155,7 @@
       reactionAudio.pause();
       reactionAudio.currentTime = 0;
       startBtn.textContent = "Démarrer";
-      startBtn.setAttribute("aria-pressed", "false");
       statusDiv.textContent = "En pause.";
-    }
-  };
-
-  themeToggle.onclick = () => {
-    if (document.body.getAttribute("data-theme") === "dark") {
-      document.body.setAttribute("data-theme", "light");
-      themeToggle.textContent = "Mode Sombre";
-      themeToggle.setAttribute("aria-pressed", "true");
-    } else {
-      document.body.setAttribute("data-theme", "dark");
-      themeToggle.textContent = "Mode Clair";
-      themeToggle.setAttribute("aria-pressed", "false");
     }
   };
 
@@ -210,7 +163,7 @@
     if (passwordInput.value === PASSWORD) {
       passwordError.textContent = "";
       passwordScreen.style.display = "none";
-      mainUI.style.display = "flex";
+      mainUI.style.display = "block";
       passwordInput.value = "";
       passwordInput.blur();
     } else {
