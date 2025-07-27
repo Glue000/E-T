@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Assistant Vocal</title>
+  <title>E = T</title>
   <style>
     body {
       background: black;
@@ -34,263 +34,233 @@
       display: block;
       margin-top: 15px;
     }
-    #overlay {
-      position: fixed;
-      inset: 0;
-      background: black;
-      color: white;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      font-size: 3em;
-      z-index: 9999;
-      flex-direction: column;
-    }
-    #clock {
-      font-size: 3em;
+    #status {
       margin-top: 20px;
+      font-size: 1.2rem;
     }
   </style>
 </head>
 <body>
 
 <h1>E = T</h1>
-
-<button onclick="toggleOverlay()">🕶️ Plein écran</button>
 <button id="startBtn">Démarrer</button>
-<button onclick="playNextInstrumental()">⏭️ Changer Instrumental</button>
+<button id="skipInstrumentalBtn">⏭️ Passer Musique</button>
 
-<div class="vol-label">
-  🔊 Volume Réaction :
+<div class="vol-label">🔊 Volume Réaction :
   <input type="range" id="reactionVolume" min="0" max="1" step="0.01" value="1" />
   <span id="reactionVal">1.00</span>
 </div>
 
-<div class="vol-label">
-  🔉 Volume Filler Voice :
-  <input type="range" id="fillerVoiceVolume" min="0" max="1" step="0.01" value="0.3" />
-  <span id="fillerVoiceVal">0.30</span>
+<div class="vol-label">🔉 Volume Filler :
+  <input type="range" id="fillerVolume" min="0" max="1" step="0.01" value="0.3" />
+  <span id="fillerVal">0.30</span>
 </div>
 
-<div class="vol-label">
-  🎼 Volume Filler Music :
-  <input type="range" id="fillerMusicVolume" min="0" max="1" step="0.01" value="0.2" />
-  <span id="fillerMusicVal">0.20</span>
-</div>
-
-<div class="vol-label">
-  🎶 Volume Instrumental Music :
-  <input type="range" id="instrumentalVolume" min="0" max="1" step="0.01" value="0.1" />
-  <span id="instrumentalVal">0.10</span>
+<div class="vol-label">🎼 Volume Musique Instrumentale :
+  <input type="range" id="musicVolume" min="0" max="1" step="0.01" value="0.1" />
+  <span id="musicVal">0.10</span>
 </div>
 
 <div id="status">En attente...</div>
 
-<div id="overlay">
-  <div>🕶️ Assistant</div>
-  <div id="clock">--:--:--</div>
-  <button onclick="toggleOverlay()">🟢 Ouvrir</button>
-</div>
-
 <script>
-// === SOURCES AUDIO ===
-const reactionAudios = [
-  "M/merci1.mp3"
-];
+  // === Sources audio ===
+  const reactionAudios = [
+    "M/merci1.mp3"
+    // Ajoute d'autres clips si besoin
+  ];
+  const fillerVoices = [
+    "M/merci2.mp3", "audio/a3.mp3", "audio/a4.mp3", "audio/a5.mp3"
+  ];
+  const fillerMusicTracks = [
+    "audio/Bet You Can.mp3"
+  ];
+  const instrumentalMusicTracks = [
+    "audio/Dance of the Sugar Plum Fairy.mp3",
+    "audio/Exhilarate.mp3",
+    "audio/Frost Waltz.mp3",
+    "audio/Gymnopedie No 1.mp3",
+    "audio/Gymnopedie No 2.mp3",
+    "audio/Happy Boy End Theme.mp3",
+    "audio/Hidden Agenda.mp3",
+    "audio/Latin Industries.mp3",
+    "audio/Pump.mp3"
+  ];
 
-const fillerVoices = [
-  "M/merci2.mp3", "M/merci3.mp3", "M/merci4.mp3"
-];
+  // === Éléments DOM ===
+  const startBtn = document.getElementById("startBtn");
+  const skipInstrBtn = document.getElementById("skipInstrumentalBtn");
+  const statusDiv = document.getElementById("status");
 
-const fillerMusicTracks = [
-  "audio/Bet You Can.mp3",
-  "audio/Dance of the Sugar Plum Fairy.mp3"
-];
+  const reactionVolSlider = document.getElementById("reactionVolume");
+  const fillerVolSlider = document.getElementById("fillerVolume");
+  const musicVolSlider = document.getElementById("musicVolume");
 
-const instrumentalMusicTracks = [
-  "audio/Exhilarate.mp3",
-  "audio/Frost Waltz.mp3",
-  "audio/Gymnopedie No 1.mp3",
-  "audio/Gymnopedie No 2.mp3",
-  "audio/Happy Boy End Theme.mp3"
-];
+  const reactionVal = document.getElementById("reactionVal");
+  const fillerVal = document.getElementById("fillerVal");
+  const musicVal = document.getElementById("musicVal");
 
-// === ÉLÉMENTS DOM ===
-const startBtn = document.getElementById("startBtn");
-const statusDiv = document.getElementById("status");
+  // === Audio objects ===
+  let recognition;
+  let isRunning = false;
 
-const reactionVolumeSlider = document.getElementById("reactionVolume");
-const fillerVoiceVolumeSlider = document.getElementById("fillerVoiceVolume");
-const fillerMusicVolumeSlider = document.getElementById("fillerMusicVolume");
-const instrumentalVolumeSlider = document.getElementById("instrumentalVolume");
+  let speakAudio = null;
+  let fillerVoice = new Audio();
+  let fillerMusic = new Audio();
+  let instrumentalMusic = new Audio();
 
-const reactionVal = document.getElementById("reactionVal");
-const fillerVoiceVal = document.getElementById("fillerVoiceVal");
-const fillerMusicVal = document.getElementById("fillerMusicVal");
-const instrumentalVal = document.getElementById("instrumentalVal");
+  // === Setup volumes and UI update ===
+  function updateVolumes() {
+    reactionVal.textContent = (+reactionVolSlider.value).toFixed(2);
+    fillerVal.textContent = (+fillerVolSlider.value).toFixed(2);
+    musicVal.textContent = (+musicVolSlider.value).toFixed(2);
 
-const overlay = document.getElementById("overlay");
-const clock = document.getElementById("clock");
+    if (speakAudio) speakAudio.volume = +reactionVolSlider.value;
+    fillerVoice.volume = +fillerVolSlider.value;
+    fillerMusic.volume = +fillerVolSlider.value;
+    instrumentalMusic.volume = +musicVolSlider.value;
+  }
+  reactionVolSlider.oninput = updateVolumes;
+  fillerVolSlider.oninput = updateVolumes;
+  musicVolSlider.oninput = updateVolumes;
 
-// === AUDIO OBJECTS ===
-let speakAudio = null;
-let fillerVoice = new Audio();
-let fillerMusic = new Audio();
-let instrumentalMusic = new Audio();
-let recognition;
-let isRunning = false;
+  // === Loop filler voice + filler music ===
+  fillerVoice.loop = false;
+  fillerVoice.onended = () => {
+    if (!speakAudio) playNextFillerVoice();
+  };
 
-let instrumentalIndex = 0;
+  fillerMusic.loop = true;
 
-// === VOLUME ===
-reactionVolumeSlider.oninput = () => {
-  reactionVal.textContent = (+reactionVolumeSlider.value).toFixed(2);
-  if (speakAudio) speakAudio.volume = +reactionVolumeSlider.value;
-};
-fillerVoiceVolumeSlider.oninput = () => {
-  fillerVoiceVal.textContent = (+fillerVoiceVolumeSlider.value).toFixed(2);
-  fillerVoice.volume = +fillerVoiceVolumeSlider.value;
-};
-fillerMusicVolumeSlider.oninput = () => {
-  fillerMusicVal.textContent = (+fillerMusicVolumeSlider.value).toFixed(2);
-  fillerMusic.volume = +fillerMusicVolumeSlider.value;
-};
-instrumentalVolumeSlider.oninput = () => {
-  instrumentalVal.textContent = (+instrumentalVolumeSlider.value).toFixed(2);
-  instrumentalMusic.volume = +instrumentalVolumeSlider.value;
-};
+  function playNextFillerVoice() {
+    if (speakAudio) return; // ne pas jouer filler si réaction en cours
+    const src = fillerVoices[Math.floor(Math.random() * fillerVoices.length)];
+    fillerVoice.src = src;
+    fillerVoice.volume = +fillerVolSlider.value;
+    fillerVoice.play().catch(() => {});
+  }
 
-// === FILLER VOICE LOOP ===
-fillerVoice.loop = false;
-fillerVoice.onended = () => {
-  if (!speakAudio) playRandomFillerVoice();
-};
-
-// === FILLER MUSIC LOOP ===
-fillerMusic.loop = true;
-
-// === INSTRUMENTAL MUSIC LOOP ===
-instrumentalMusic.loop = false;
-instrumentalMusic.onended = () => {
-  playNextInstrumental();
-};
-
-function playRandomFillerVoice() {
-  if (speakAudio) return; // pas jouer si réaction en cours
-  const track = fillerVoices[Math.floor(Math.random() * fillerVoices.length)];
-  fillerVoice.src = track;
-  fillerVoice.volume = +fillerVoiceVolumeSlider.value;
-  fillerVoice.play().catch(() => {});
-  if (fillerMusic.paused) {
-    fillerMusic.src = fillerMusicTracks[0];
-    fillerMusic.volume = +fillerMusicVolumeSlider.value;
+  function playFillerMusic() {
+    fillerMusic.src = fillerMusicTracks[0]; // un seul morceau pour filler music
+    fillerMusic.loop = true;
+    fillerMusic.volume = +fillerVolSlider.value;
     fillerMusic.play().catch(() => {});
   }
-}
 
-function playNextInstrumental() {
-  instrumentalIndex = (instrumentalIndex + 1) % instrumentalMusicTracks.length;
-  const src = instrumentalMusicTracks[instrumentalIndex];
-  instrumentalMusic.src = src;
-  instrumentalMusic.volume = +instrumentalVolumeSlider.value;
-  instrumentalMusic.play().catch(() => {});
-}
+  // === Instrumental music loop + bouton skip ===
+  instrumentalMusic.loop = false;
+  instrumentalMusic.onended = playNextInstrumental;
 
-// === REACTION AUDIO ===
-function playReaction() {
-  const clip = reactionAudios[Math.floor(Math.random() * reactionAudios.length)];
-  if (speakAudio) {
-    speakAudio.pause();
-    speakAudio.currentTime = 0;
-    speakAudio = null;
+  function playNextInstrumental() {
+    const src = instrumentalMusicTracks[Math.floor(Math.random() * instrumentalMusicTracks.length)];
+    instrumentalMusic.src = src;
+    instrumentalMusic.volume = +musicVolSlider.value;
+    instrumentalMusic.play().catch(() => {});
   }
-  speakAudio = new Audio(clip);
-  speakAudio.volume = +reactionVolumeSlider.value;
 
-  // Ne pas couper le filler et instrumental, on joue en même temps
-  speakAudio.play().catch(() => {});
+  skipInstrBtn.onclick = () => {
+    playNextInstrumental();
+  };
 
-  speakAudio.onended = () => {
-    speakAudio = null;
-    if (fillerVoice.paused) playRandomFillerVoice();
-    if (fillerMusic.paused) {
-      fillerMusic.src = fillerMusicTracks[0];
-      fillerMusic.volume = +fillerMusicVolumeSlider.value;
-      fillerMusic.play().catch(() => {});
+  // === Play reaction audio ===
+  function playReaction() {
+    if (speakAudio) {
+      speakAudio.pause();
+      speakAudio.currentTime = 0;
     }
-  };
-}
+    speakAudio = new Audio(reactionAudios[Math.floor(Math.random() * reactionAudios.length)]);
+    speakAudio.volume = +reactionVolSlider.value;
 
-// === RECONNAISSANCE VOCALE ===
-function startRecognition() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    alert("❌ SpeechRecognition non supporté");
-    return;
-  }
-  recognition = new SR();
-  recognition.lang = "fr-FR";
-  recognition.continuous = true;
-  recognition.interimResults = false;
-
-  recognition.onresult = e => {
-    const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
-    statusDiv.textContent = `🗣️ "${text}"`;
-    playReaction();
-  };
-
-  recognition.onend = () => {
-    if (isRunning) recognition.start();
-  };
-
-  recognition.start();
-}
-
-// === DÉMARRER / ARRÊTER ===
-startBtn.onclick = () => {
-  isRunning = !isRunning;
-  if (isRunning) {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      stream.getTracks().forEach(track => track.stop());
-      startRecognition();
-      playRandomFillerVoice();
-      fillerMusic.src = fillerMusicTracks[0];
-      fillerMusic.volume = +fillerMusicVolumeSlider.value;
-      fillerMusic.loop = true;
-      fillerMusic.play().catch(() => {});
-      instrumentalIndex = 0;
-      instrumentalMusic.src = instrumentalMusicTracks[instrumentalIndex];
-      instrumentalMusic.volume = +instrumentalVolumeSlider.value;
-      instrumentalMusic.play().catch(() => {});
-      startBtn.textContent = "Arrêter";
-      statusDiv.textContent = "🎤 En écoute...";
-    }).catch(e => {
-      alert("❌ Micro refusé : " + e.message);
-      isRunning = false;
-    });
-  } else {
-    recognition?.stop();
+    // Stop filler and instrumental music
     fillerVoice.pause();
     fillerMusic.pause();
     instrumentalMusic.pause();
-    speakAudio?.pause();
-    startBtn.textContent = "Démarrer";
-    statusDiv.textContent = "En pause.";
+
+    speakAudio.play().catch(() => {});
+    speakAudio.onended = () => {
+      speakAudio = null;
+      playNextFillerVoice();
+      playFillerMusic();
+      playNextInstrumental();
+    };
   }
-};
 
-// === OVERLAY ET HORLOGE ===
-function toggleOverlay() {
-  overlay.style.display = overlay.style.display === "flex" ? "none" : "flex";
-}
+  // === Speech recognition ===
+  function startRecognition() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      alert("Reconnaissance vocale non supportée");
+      return;
+    }
+    recognition = new SR();
+    recognition.lang = "fr-FR";
+    recognition.continuous = true;
+    recognition.interimResults = false;
 
-setInterval(() => {
-  const now = new Date();
-  const hh = now.getHours().toString().padStart(2, "0");
-  const mm = now.getMinutes().toString().padStart(2, "0");
-  const ss = now.getSeconds().toString().padStart(2, "0");
-  clock.textContent = `${hh}:${mm}:${ss}`;
-}, 1000);
+    recognition.onresult = (event) => {
+      const text = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+      statusDiv.textContent = `🗣️ "${text}"`;
+      playReaction();
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        statusDiv.textContent = "Permission microphone refusée.";
+        stopRecognition();
+        isRunning = false;
+        startBtn.textContent = "Démarrer";
+      }
+    };
+
+    recognition.onend = () => {
+      if (isRunning) recognition.start();
+    };
+
+    recognition.start();
+  }
+
+  function stopRecognition() {
+    if (recognition) recognition.stop();
+  }
+
+  // === Start / Stop app ===
+  startBtn.onclick = () => {
+    if (isRunning) {
+      stopRecognition();
+      stopAllAudio();
+      startBtn.textContent = "Démarrer";
+      statusDiv.textContent = "Arrêté.";
+      isRunning = false;
+    } else {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          stream.getTracks().forEach(t => t.stop());
+          startRecognition();
+          playNextFillerVoice();
+          playFillerMusic();
+          playNextInstrumental();
+          startBtn.textContent = "Arrêter";
+          statusDiv.textContent = "🎤 En écoute...";
+          isRunning = true;
+        })
+        .catch(err => {
+          alert("Micro non autorisé : " + err.message);
+        });
+    }
+  };
+
+  function stopAllAudio() {
+    if (speakAudio) {
+      speakAudio.pause();
+      speakAudio = null;
+    }
+    fillerVoice.pause();
+    fillerMusic.pause();
+    instrumentalMusic.pause();
+  }
+
+  // Mise à jour initiale des volumes
+  updateVolumes();
 </script>
 
 </body>
