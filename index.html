@@ -3,38 +3,56 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Assistant Vocal avec Gestion Erreurs</title>
+<title>Assistant Vocal Simple + Réaction Audio</title>
 <style>
   body {
-    background: black;
-    color: white;
-    font-family: Arial, sans-serif;
+    background: #121212;
+    color: #eee;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+  }
+  #container {
+    background: #222;
+    padding: 30px 50px;
+    border-radius: 15px;
+    box-shadow: 0 0 15px #000;
     text-align: center;
-    padding: 30px;
+    width: 320px;
   }
   button {
-    font-size: 1.3rem;
-    padding: 12px 24px;
-    background: #333;
-    color: white;
+    font-size: 1.2rem;
+    padding: 12px 30px;
+    background-color: #008cff;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
+    color: white;
     cursor: pointer;
+    transition: background-color 0.25s ease;
+    user-select: none;
+    width: 100%;
   }
   button:hover {
-    background: #555;
+    background-color: #005fbb;
   }
   #status {
-    margin-top: 30px;
-    font-weight: bold;
-    min-height: 1.5em;
+    margin-top: 25px;
+    font-weight: 600;
+    min-height: 2em;
+    color: #ccc;
   }
 </style>
 </head>
 <body>
 
-<button id="startBtn">Démarrer</button>
-<div id="status">En attente...</div>
+<div id="container">
+  <button id="startBtn">Démarrer</button>
+  <div id="status">En attente...</div>
+</div>
 
 <audio id="reactionAudio" src="M/merci1.mp3" preload="auto"></audio>
 
@@ -92,7 +110,6 @@
           return;
         }
       }
-      // arrêt après trop d'erreurs ou erreurs critiques
       isRunning = false;
       startBtn.textContent = "Démarrer";
     };
