@@ -2,168 +2,63 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Assistant Vocal v0.2</title>
+<title>Test Micro Simple</title>
 <style>
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: #121212;
-    color: #eee;
-    font-family: Arial, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-  }
-  #login, #app {
-    display: none;
-    flex-direction: column;
-    background: #222;
-    padding: 30px;
-    border-radius: 12px;
-    width: 320px;
-    box-shadow: 0 0 10px #000;
-    text-align: center;
-  }
-  input[type="password"] {
-    padding: 10px;
-    font-size: 1.2rem;
-    margin-bottom: 15px;
-    border: none;
-    border-radius: 6px;
-    width: 100%;
-  }
-  button {
-    padding: 12px;
-    font-size: 1.1rem;
-    background: #008cff;
+  body {
+    background: black;
     color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-  }
-  button:hover {
-    background: #006dcc;
-  }
-  #status {
-    margin-top: 20px;
-    min-height: 1.5em;
-    white-space: pre-wrap;
-  }
-  #version {
-    position: absolute;
-    bottom: 10px;
-    font-size: 0.9rem;
-    color: #888;
+    font-family: sans-serif;
     text-align: center;
-    width: 100%;
-    user-select: none;
+    padding-top: 40vh;
+    margin: 0;
   }
 </style>
 </head>
 <body>
 
-<div id="login">
-  <h2>Code d'accès</h2>
-  <input type="password" id="pass" placeholder="Entrer le code" autocomplete="off" />
-  <button id="loginBtn">Valider</button>
-  <div id="error" style="color:red; margin-top:10px;"></div>
-</div>
-
-<div id="app">
-  <button id="startBtn">Démarrer</button>
-  <div id="status">En attente...</div>
-</div>
-
-<div id="version">Version 0.2</div>
+<h1>🎤 Parlez</h1>
+<div id="status">Initialisation...</div>
 
 <script>
-  const login = document.getElementById("login");
-  const app = document.getElementById("app");
-  const pass = document.getElementById("pass");
-  const error = document.getElementById("error");
-  const loginBtn = document.getElementById("loginBtn");
-  const startBtn = document.getElementById("startBtn");
-  const statusDiv = document.getElementById("status");
-
-  let recognition;
-  let running = false;
-
-  login.style.display = "flex";
-
-  loginBtn.onclick = () => {
-    if (pass.value === "8629") {
-      login.style.display = "none";
-      app.style.display = "flex";
-      error.textContent = "";
-    } else {
-      error.textContent = "Code incorrect.";
-    }
-  };
+  const status = document.getElementById("status");
 
   function startRecognition() {
-    if (!running) return;
-
-    if (!recognition) {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) {
-        alert("Reconnaissance non supportée");
-        running = false;
-        startBtn.textContent = "Démarrer";
-        return;
-      }
-      recognition = new SR();
-      recognition.lang = "fr-FR";
-      recognition.interimResults = false;
-      recognition.continuous = true;
-
-      recognition.onstart = () => {
-        statusDiv.textContent = "🎤 Micro activé, parlez...";
-      };
-
-      recognition.onresult = (event) => {
-        const last = event.results.length - 1;
-        const transcript = event.results[last][0].transcript.trim();
-        statusDiv.textContent = `🗣️ "${transcript}"`;
-      };
-
-      recognition.onerror = (event) => {
-        statusDiv.textContent = "❌ Erreur : " + event.error;
-        running = false;
-        startBtn.textContent = "Démarrer";
-      };
-
-      recognition.onend = () => {
-        if (running) {
-          statusDiv.textContent += "\n(Redémarrage de la reconnaissance...)";
-          recognition.start();
-        }
-      };
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      status.textContent = "❌ Reconnaissance non supportée.";
+      return;
     }
+
+    const recognition = new SR();
+    recognition.lang = "fr-FR";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    recognition.onstart = () => {
+      status.textContent = "🎙️ Dites quelque chose...";
+    };
+
+    recognition.onresult = e => {
+      const txt = e.results[0][0].transcript;
+      status.textContent = `✅ Vous avez dit : "${txt}"`;
+    };
+
+    recognition.onerror = e => {
+      status.textContent = "❌ Erreur : " + e.error;
+    };
+
+    recognition.onend = () => {
+      status.textContent += "\n🎧 Micro désactivé.";
+    };
 
     recognition.start();
   }
 
-  startBtn.onclick = () => {
-    if (!running) {
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(() => {
-          running = true;
-          startBtn.textContent = "Arrêter";
-          startRecognition();
-        })
-        .catch(err => {
-          alert("Erreur micro : " + err.message);
-        });
-    } else {
-      running = false;
-      startBtn.textContent = "Démarrer";
-      if (recognition) {
-        recognition.stop();
-      }
-      statusDiv.textContent = "En pause.";
-    }
-  };
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(() => startRecognition())
+    .catch(e => {
+      status.textContent = "❌ Micro refusé : " + e.message;
+    });
 </script>
 
 </body>
