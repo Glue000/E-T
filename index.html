@@ -159,18 +159,11 @@
 
 <button onclick="playClick(); toggleOverlay()" aria-label="Activer le mode plein écran">🕶️ Plein écran</button>
 <button id="startBtn" onclick="playClick()" aria-pressed="false">Démarrer</button>
-<button onclick="playClick(); playInstrumental()" aria-label="Changer la musique instrumentale">⏭️ Changer Instrumental</button>
 
 <div class="vol-label">
   🔊 Volume Réaction :
   <input type="range" id="reactionVolume" min="0" max="1" step="0.01" value="1" aria-valuemin="0" aria-valuemax="1" aria-valuenow="1" aria-label="Volume des réactions audio" />
   <span id="reactionVal">1.00</span>
-</div>
-
-<div class="vol-label">
-  🎼 Volume Instrumental :
-  <input type="range" id="musicVolume" min="0" max="1" step="0.01" value="0.1" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0.1" aria-label="Volume de la musique instrumentale" />
-  <span id="musicVal">0.10</span>
 </div>
 
 <div class="vol-label">
@@ -188,11 +181,6 @@
 
 <script>
 const reactionAudios = ["M/merci1.mp3"];
-const musicTracks = [
-  "audio/Exhilarate.mp3", "audio/Frost Waltz.mp3", "audio/Gymnopedie No 1.mp3",
-  "audio/Gymnopedie No 2.mp3", "audio/Happy Boy End Theme.mp3",
-  "audio/Hidden Agenda.mp3", "audio/Latin Industries.mp3", "audio/Pump.mp3"
-];
 
 const startBtn = document.getElementById("startBtn");
 const statusDiv = document.getElementById("status");
@@ -200,22 +188,16 @@ const clock = document.getElementById("clock");
 const themeToggle = document.getElementById("themeToggle");
 
 const reactionVol = document.getElementById("reactionVolume");
-const musicVol = document.getElementById("musicVolume");
 const clickVol = document.getElementById("clickVolume");
 
 const reactionVal = document.getElementById("reactionVal");
-const musicVal = document.getElementById("musicVal");
 const clickVal = document.getElementById("clickVal");
 
 const clickSound = document.getElementById("clickSound");
 
 let speakAudio = null;
-let musicAudio = new Audio();
 let recognition = null;
 let isRunning = false;
-let micStream = null;
-
-musicAudio.loop = false;
 
 function updateAriaValue(input, span) {
   span.textContent = (+input.value).toFixed(2);
@@ -224,10 +206,6 @@ function updateAriaValue(input, span) {
 
 reactionVol.oninput = () => {
   updateAriaValue(reactionVol, reactionVal);
-};
-musicVol.oninput = () => {
-  updateAriaValue(musicVol, musicVal);
-  musicAudio.volume = +musicVol.value;
 };
 clickVol.oninput = () => {
   updateAriaValue(clickVol, clickVal);
@@ -240,23 +218,11 @@ function playClick() {
   clickSound.play().catch(() => {});
 }
 
-function playInstrumental() {
-  const src = musicTracks[Math.floor(Math.random() * musicTracks.length)];
-  musicAudio.src = src;
-  musicAudio.volume = +musicVol.value;
-  musicAudio.play().catch(() => {});
-}
-musicAudio.onended = playInstrumental;
-
 function stopRecognition() {
   if (recognition) {
     recognition.onend = null; // prevent restart
     recognition.stop();
     recognition = null;
-  }
-  if (micStream) {
-    micStream.getTracks().forEach(t => t.stop());
-    micStream = null;
   }
 }
 
@@ -311,8 +277,6 @@ function playReaction() {
     speakAudio = null;
   }
 
-  musicAudio.pause();
-
   speakAudio = new Audio(reactionAudios[Math.floor(Math.random() * reactionAudios.length)]);
   speakAudio.volume = +reactionVol.value;
   speakAudio.play().catch(() => {});
@@ -320,7 +284,6 @@ function playReaction() {
   speakAudio.onended = () => {
     speakAudio = null;
     playClick();
-    playInstrumental();
     setTimeout(() => {
       if (isRunning) startRecognition();
     }, 300); // short delay before listening again
@@ -333,11 +296,8 @@ startBtn.onclick = () => {
   startBtn.textContent = isRunning ? "Arrêter" : "Démarrer";
   startBtn.setAttribute("aria-pressed", isRunning.toString());
   if (isRunning) {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      micStream = stream;
-      micStream.getTracks().forEach(t => t.stop());
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
       startRecognition();
-      playInstrumental();
       statusDiv.textContent = "🎤 En écoute...";
     }).catch(e => {
       alert("❌ Micro refusé : " + e.message);
@@ -348,7 +308,6 @@ startBtn.onclick = () => {
     });
   } else {
     stopRecognition();
-    musicAudio.pause();
     speakAudio?.pause();
     statusDiv.textContent = "En pause.";
   }
