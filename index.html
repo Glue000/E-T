@@ -1,32 +1,145 @@
 <!DOCTYPE html>
 <html lang="fr">
-<head><meta charset="UTF-8"><title>Test Mic</title></head>
-<body>
-<button id="startBtn">Démarrer</button>
-<div id="status"></div>
-<script>
-const startBtn = document.getElementById("startBtn");
-const statusDiv = document.getElementById("status");
-startBtn.onclick = () => {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    statusDiv.textContent = "API non supportée";
-    return;
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Assistant Vocal avec Gestion Erreurs</title>
+<style>
+  body {
+    background: black;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 30px;
   }
-  const recognition = new SpeechRecognition();
-  recognition.lang = "fr-FR";
-  recognition.continuous = false;
-  recognition.interimResults = false;
+  button {
+    font-size: 1.3rem;
+    padding: 12px 24px;
+    background: #333;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:hover {
+    background: #555;
+  }
+  #status {
+    margin-top: 30px;
+    font-weight: bold;
+    min-height: 1.5em;
+  }
+</style>
+</head>
+<body>
 
-  recognition.onstart = () => statusDiv.textContent = "🎤 Écoute...";
-  recognition.onresult = e => {
-    const text = e.results[0][0].transcript;
-    statusDiv.textContent = `Reconnu: ${text}`;
+<button id="startBtn">Démarrer</button>
+<div id="status">En attente...</div>
+
+<audio id="reactionAudio" src="M/merci1.mp3" preload="auto"></audio>
+
+<script>
+(() => {
+  const startBtn = document.getElementById("startBtn");
+  const statusDiv = document.getElementById("status");
+  const reactionAudio = document.getElementById("reactionAudio");
+
+  let recognition = null;
+  let isRunning = false;
+  const isAndroid = /android/i.test(navigator.userAgent);
+
+  let errorCount = 0;
+  const maxErrorRetries = 3;
+
+  function startRecognition() {
+    if (recognition) {
+      recognition.abort();
+      recognition = null;
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Reconnaissance vocale non supportée par ce navigateur.");
+      return;
+    }
+    recognition = new SpeechRecognition();
+    recognition.lang = "fr-FR";
+    recognition.interimResults = false;
+    recognition.continuous = !isAndroid;
+
+    recognition.onstart = () => {
+      statusDiv.textContent = "🎤 En écoute...";
+      errorCount = 0;
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[event.results.length -1][0].transcript.trim();
+      statusDiv.textContent = `🗣️ "${transcript}"`;
+      recognition.stop();
+      playReaction();
+    };
+
+    recognition.onerror = (event) => {
+      statusDiv.textContent = `Erreur : ${event.error}`;
+      console.warn("SpeechRecognition error:", event.error);
+
+      if (event.error === "network" || event.error === "not-allowed" || event.error === "service-not-allowed") {
+        errorCount++;
+        if (errorCount <= maxErrorRetries) {
+          statusDiv.textContent += ` (tentative ${errorCount}/${maxErrorRetries})`;
+          setTimeout(() => {
+            if (isRunning) recognition.start();
+          }, 2000);
+          return;
+        }
+      }
+      // arrêt après trop d'erreurs ou erreurs critiques
+      isRunning = false;
+      startBtn.textContent = "Démarrer";
+    };
+
+    recognition.onend = () => {
+      if (isRunning && reactionAudio.paused) {
+        recognition.start();
+      }
+    };
+
+    recognition.start();
+  }
+
+  function stopRecognition() {
+    if (recognition) {
+      recognition.abort();
+      recognition = null;
+    }
+  }
+
+  function playReaction() {
+    reactionAudio.play().catch(() => {});
+    reactionAudio.onended = () => {
+      if (isRunning) startRecognition();
+    };
+  }
+
+  startBtn.onclick = () => {
+    if (!isRunning) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
+        isRunning = true;
+        startBtn.textContent = "Arrêter";
+        startRecognition();
+      }).catch((err) => {
+        alert("Micro refusé ou erreur : " + err.message);
+      });
+    } else {
+      isRunning = false;
+      stopRecognition();
+      reactionAudio.pause();
+      reactionAudio.currentTime = 0;
+      startBtn.textContent = "Démarrer";
+      statusDiv.textContent = "En pause.";
+    }
   };
-  recognition.onerror = e => statusDiv.textContent = "Erreur: "+e.error;
-  recognition.onend = () => statusDiv.textContent += " (fin)";
-  recognition.start();
-};
+})();
 </script>
+
 </body>
 </html>
