@@ -36,7 +36,6 @@
 
   let recognition = null;
   let isRecognizing = false;
-  let restartTimeout = null;
   const audio = new Audio("M/merci1.mp3");
 
   function startRecognition() {
@@ -44,7 +43,7 @@
       recognition = new SpeechRecognition();
       recognition.lang = "fr-FR";
       recognition.interimResults = false;
-      recognition.continuous = false; // Chrome mobile bug with continuous=true
+      recognition.continuous = false; // mobile Chrome bug fix
 
       recognition.onstart = () => {
         isRecognizing = true;
@@ -56,30 +55,20 @@
         const txt = e.results[e.results.length - 1][0].transcript.trim();
         status.textContent = `✅ Vous avez dit : "${txt}"`;
 
-        // Play the audio once
+        // Stop recognition before playing audio to avoid overlap
+        recognition.stop();
+
         audio.currentTime = 0;
         audio.play();
-
-        // After audio ends, restart recognition
-        audio.onended = () => {
-          if (isRecognizing) {
-            recognition.start();
-          }
-        };
-
-        // Stop recognition while playing audio to avoid overlap
-        recognition.stop();
       };
 
       recognition.onerror = e => {
-        if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'not-allowed') {
-          if (e.error === 'no-speech') {
-            setTimeout(() => {
-              if (isRecognizing) recognition.start();
-            }, 500);
-          } else {
-            stopRecognition();
-          }
+        if (e.error === 'no-speech') {
+          setTimeout(() => {
+            if (isRecognizing) recognition.start();
+          }, 500);
+        } else if (e.error === 'aborted' || e.error === 'not-allowed') {
+          stopRecognition();
         } else {
           status.textContent = "❌ Erreur : " + e.error;
           stopRecognition();
@@ -88,16 +77,10 @@
 
       recognition.onend = () => {
         isRecognizing = false;
-        startBtn.textContent = "Démarrer la reconnaissance";
-        if (recognition && !restartTimeout && startBtn.textContent === "Arrêter la reconnaissance") {
-          restartTimeout = setTimeout(() => {
-            restartTimeout = null;
-            recognition.start();
-          }, 500);
-        } else {
-          if (!status.textContent.includes("✅")) {
-            status.textContent = "🎧 Micro désactivé ou fin de la reconnaissance.";
-          }
+        // Only update UI if audio is not playing
+        if (audio.paused) {
+          startBtn.textContent = "Démarrer la reconnaissance";
+          status.textContent = "🎧 Micro désactivé ou fin de la reconnaissance.";
         }
       };
     }
@@ -106,6 +89,13 @@
       recognition.start();
     }
   }
+
+  // Restart recognition automatically after audio ends
+  audio.onended = () => {
+    if (!isRecognizing) {
+      recognition.start();
+    }
+  };
 
   function stopRecognition() {
     if (recognition && isRecognizing) {
