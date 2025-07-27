@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Assistant Vocal Simple</title>
+<title>Assistant Vocal Minimal</title>
 <style>
   body {
     background: black;
@@ -12,20 +12,9 @@
     text-align: center;
     padding: 30px;
   }
-  #passwordScreen, #mainUI {
-    max-width: 300px;
-    margin: auto;
-  }
-  input {
-    font-size: 1.3rem;
-    padding: 8px;
-    width: 100%;
-    box-sizing: border-box;
-    margin-bottom: 10px;
-  }
   button {
     font-size: 1.3rem;
-    padding: 10px 20px;
+    padding: 12px 24px;
     background: #333;
     color: white;
     border: none;
@@ -36,45 +25,23 @@
     background: #555;
   }
   #status {
-    margin-top: 25px;
+    margin-top: 30px;
     font-weight: bold;
     min-height: 1.5em;
-  }
-  #clock {
-    margin-top: 15px;
-    font-size: 1.8rem;
-    user-select: none;
   }
 </style>
 </head>
 <body>
 
-<div id="passwordScreen">
-  <h2>Entrez le code</h2>
-  <input id="passwordInput" type="password" maxlength="4" autocomplete="off" autofocus placeholder="Code secret" />
-  <button id="passwordSubmit">Valider</button>
-  <div id="passwordError" style="color: red; min-height: 1.2em;"></div>
-</div>
+<button id="startBtn">Démarrer</button>
+<div id="status">En attente...</div>
 
-<div id="mainUI" style="display:none;">
-  <button id="startBtn">Démarrer</button>
-  <div id="status">En attente...</div>
-  <div id="clock">--:--:--</div>
-  <audio id="reactionAudio" src="M/merci1.mp3" preload="auto"></audio>
-</div>
+<audio id="reactionAudio" src="M/merci1.mp3" preload="auto"></audio>
 
 <script>
 (() => {
-  const PASSWORD = "8629";
-  const passwordScreen = document.getElementById("passwordScreen");
-  const passwordInput = document.getElementById("passwordInput");
-  const passwordSubmit = document.getElementById("passwordSubmit");
-  const passwordError = document.getElementById("passwordError");
-
-  const mainUI = document.getElementById("mainUI");
   const startBtn = document.getElementById("startBtn");
   const statusDiv = document.getElementById("status");
-  const clock = document.getElementById("clock");
   const reactionAudio = document.getElementById("reactionAudio");
 
   let recognition = null;
@@ -83,48 +50,48 @@
 
   function startRecognition() {
     if (recognition) {
-      recognition.stop();
+      recognition.abort();
       recognition = null;
     }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      alert("Reconnaissance non supportée");
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Reconnaissance vocale non supportée par ce navigateur.");
       return;
     }
-    recognition = new SR();
+    recognition = new SpeechRecognition();
     recognition.lang = "fr-FR";
-    recognition.continuous = !isAndroid;
     recognition.interimResults = false;
+    recognition.continuous = !isAndroid;
 
-    recognition.onresult = (e) => {
-      const text = e.results[e.results.length -1][0].transcript.trim();
-      statusDiv.textContent = `🗣️ "${text}"`;
+    recognition.onstart = () => {
+      statusDiv.textContent = "🎤 En écoute...";
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[event.results.length -1][0].transcript.trim();
+      statusDiv.textContent = `🗣️ "${transcript}"`;
       recognition.stop();
       playReaction();
+    };
+
+    recognition.onerror = (event) => {
+      statusDiv.textContent = `Erreur : ${event.error}`;
+      isRunning = false;
+      startBtn.textContent = "Démarrer";
     };
 
     recognition.onend = () => {
       if (isRunning && reactionAudio.paused) {
         recognition.start();
-        statusDiv.textContent = "🎤 En écoute...";
       }
     };
 
-    recognition.onerror = (e) => {
-      statusDiv.textContent = `Erreur : ${e.error}`;
-      isRunning = false;
-      startBtn.textContent = "Démarrer";
-    };
-
-    try {
-      recognition.start();
-      statusDiv.textContent = "🎤 En écoute...";
-    } catch {}
+    recognition.start();
   }
 
   function stopRecognition() {
     if (recognition) {
-      recognition.stop();
+      recognition.abort();
       recognition = null;
     }
   }
@@ -132,25 +99,21 @@
   function playReaction() {
     reactionAudio.play().catch(() => {});
     reactionAudio.onended = () => {
-      if (isRunning) {
-        startRecognition();
-      }
+      if (isRunning) startRecognition();
     };
   }
 
   startBtn.onclick = () => {
-    isRunning = !isRunning;
-    if (isRunning) {
-      navigator.mediaDevices.getUserMedia({audio:true}).then(() => {
-        startRecognition();
+    if (!isRunning) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
+        isRunning = true;
         startBtn.textContent = "Arrêter";
-      }).catch(e => {
-        alert("Micro refusé : " + e.message);
-        isRunning = false;
-        startBtn.textContent = "Démarrer";
-        statusDiv.textContent = "En pause.";
+        startRecognition();
+      }).catch((err) => {
+        alert("Micro refusé ou erreur : " + err.message);
       });
     } else {
+      isRunning = false;
       stopRecognition();
       reactionAudio.pause();
       reactionAudio.currentTime = 0;
@@ -158,26 +121,6 @@
       statusDiv.textContent = "En pause.";
     }
   };
-
-  passwordSubmit.onclick = () => {
-    if (passwordInput.value === PASSWORD) {
-      passwordError.textContent = "";
-      passwordScreen.style.display = "none";
-      mainUI.style.display = "block";
-      passwordInput.value = "";
-      passwordInput.blur();
-    } else {
-      passwordError.textContent = "Code incorrect";
-    }
-  };
-
-  passwordInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") passwordSubmit.click();
-  });
-
-  setInterval(() => {
-    clock.textContent = new Date().toLocaleTimeString("fr-FR");
-  }, 1000);
 })();
 </script>
 
