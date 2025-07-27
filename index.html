@@ -105,6 +105,9 @@
   let recognition = null;
   let isRunning = false;
 
+  // Detect Android to disable continuous mode
+  const isAndroid = /android/i.test(navigator.userAgent);
+
   function startRecognition() {
     if (recognition) {
       recognition.stop();
@@ -117,7 +120,7 @@
     }
     recognition = new SR();
     recognition.lang = "fr-FR";
-    recognition.continuous = true;
+    recognition.continuous = !isAndroid; // Disable continuous on Android
     recognition.interimResults = false;
 
     recognition.onresult = (e) => {
@@ -128,22 +131,29 @@
     };
 
     recognition.onend = () => {
+      // On Android, wait for reaction audio to finish before restarting
       if (isRunning && !reactionAudio.paused) return;
-      if (isRunning) {
-        recognition.start();
-      }
+      if (isRunning) recognition.start();
     };
 
     recognition.onerror = (e) => {
       console.error("Recognition error:", e.error);
       statusDiv.textContent = `Erreur micro: ${e.error}`;
-      isRunning = false;
-      startBtn.textContent = "Démarrer";
-      startBtn.setAttribute("aria-pressed", "false");
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        alert("❌ Permission micro refusée");
+        isRunning = false;
+        startBtn.textContent = "Démarrer";
+        startBtn.setAttribute("aria-pressed", "false");
+        statusDiv.textContent = "Permission refusée";
+      }
     };
 
-    recognition.start();
-    statusDiv.textContent = "🎤 En écoute...";
+    try {
+      recognition.start();
+      statusDiv.textContent = "🎤 En écoute...";
+    } catch {
+      // Sometimes start throws if already started; ignore
+    }
   }
 
   function stopRecognition() {
