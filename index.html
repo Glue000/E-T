@@ -3,29 +3,19 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>E = T</title>
+<title>E = T - Simple</title>
 <style>
-  :root {
-    --bg-dark: #000;
-    --text-dark: #fff;
-    --bg-light: #f0f0f0;
-    --text-light: #111;
-    --btn-dark: #333;
-    --btn-light: #ddd;
-    --btn-hover-dark: #555;
-    --btn-hover-light: #bbb;
-  }
   body[data-theme="dark"] {
-    background: var(--bg-dark);
-    color: var(--text-dark);
+    background: black;
+    color: white;
   }
   body[data-theme="light"] {
-    background: var(--bg-light);
-    color: var(--text-light);
+    background: white;
+    color: black;
   }
   body {
     font-family: Arial, sans-serif;
-    margin:0; padding:20px;
+    margin: 0; padding: 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -33,49 +23,12 @@
     transition: background-color 0.3s, color 0.3s;
   }
   button {
-    background: var(--btn-dark);
-    color: var(--text-dark);
-    border: none;
-    border-radius: 8px;
-    padding: 12px 24px;
-    margin: 8px;
     font-size: 1.2rem;
+    margin: 10px;
+    padding: 10px 20px;
+    border-radius: 6px;
+    border: none;
     cursor: pointer;
-    transition: background 0.3s;
-  }
-  body[data-theme="light"] button {
-    background: var(--btn-light);
-    color: var(--text-light);
-  }
-  button:hover, button:focus {
-    background: var(--btn-hover-dark);
-    outline: none;
-  }
-  body[data-theme="light"] button:hover, body[data-theme="light"] button:focus {
-    background: var(--btn-hover-light);
-  }
-  input[type=range] {
-    width: 150px;
-    margin-left: 8px;
-    vertical-align: middle;
-  }
-  .vol-control {
-    margin: 12px 0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 1.1rem;
-  }
-  #status {
-    margin-top: 30px;
-    font-weight: bold;
-    min-height: 1.5em;
-  }
-  #clock {
-    margin-top: 20px;
-    font-size: 2rem;
-    font-weight: bold;
-    user-select: none;
   }
   #passwordScreen {
     position: fixed;
@@ -90,19 +43,12 @@
   }
   #passwordInput {
     font-size: 1.5rem;
-    padding: 10px;
-    width: 180px;
+    padding: 8px;
+    width: 150px;
     text-align: center;
-    border-radius: 8px;
-    border: 2px solid gray;
-    background: transparent;
-    color: inherit;
-  }
-  #passwordSubmit {
-    font-size: 1.3rem;
   }
   #passwordError {
-    color: #f44;
+    color: red;
     min-height: 1.2em;
   }
   #mainUI {
@@ -110,59 +56,40 @@
     flex-direction: column;
     align-items: center;
   }
+  #status {
+    margin-top: 30px;
+    font-weight: bold;
+    min-height: 1.5em;
+  }
+  #clock {
+    margin-top: 20px;
+    font-size: 2rem;
+    font-weight: bold;
+    user-select: none;
+  }
 </style>
 </head>
 <body data-theme="dark">
 
-<!-- Password Screen -->
 <div id="passwordScreen" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
   <h2 id="pwTitle">Entrez le code</h2>
-  <input id="passwordInput" type="password" maxlength="4" inputmode="numeric" autocomplete="off" aria-describedby="passwordError" aria-label="Code secret" autofocus />
+  <input id="passwordInput" type="password" maxlength="4" inputmode="numeric" autocomplete="off" aria-label="Code secret" autofocus />
   <button id="passwordSubmit">Valider</button>
   <div id="passwordError" role="alert" aria-live="assertive"></div>
 </div>
 
-<!-- Main UI -->
 <div id="mainUI" role="main" aria-live="polite" aria-atomic="true">
-  <h1>E = T</h1>
-
   <button id="startBtn" aria-pressed="false">Démarrer</button>
-
-  <div class="vol-control">
-    🔊 Réaction :
-    <input type="range" id="reactionVolume" min="0" max="1" step="0.01" value="1" aria-label="Volume réaction" />
-    <span id="reactionVal">1.00</span>
-  </div>
-
-  <div class="vol-control">
-    🎵 Audio mic actif :
-    <input type="range" id="micAudioVolume" min="0" max="1" step="0.01" value="0.3" aria-label="Volume audio microphone actif" />
-    <span id="micAudioVal">0.30</span>
-  </div>
-
-  <div class="vol-control">
-    🔔 Clic :
-    <input type="range" id="clickVolume" min="0" max="1" step="0.01" value="1" aria-label="Volume clic" />
-    <span id="clickVal">1.00</span>
-  </div>
-
+  <button id="themeToggle" aria-pressed="false">Mode Clair</button>
   <div id="status">En attente...</div>
   <div id="clock" aria-label="Horloge">--:--:--</div>
-
-  <button id="themeToggle" aria-pressed="false" aria-label="Changer mode clair/sombre">Changer mode clair/sombre</button>
+  <audio id="reactionAudio" src="M/merci1.mp3" preload="auto"></audio>
 </div>
-
-<!-- Audio Elements -->
-<audio id="clickSound" src="click.mp3" preload="auto"></audio>
-<audio id="micActiveAudio" src="audio/mic_active_loop.mp3" preload="auto" loop></audio>
 
 <script>
 (() => {
   const PASSWORD = "8629";
 
-  const reactionAudios = ["M/merci1.mp3"];
-
-  // Elements
   const passwordScreen = document.getElementById("passwordScreen");
   const passwordInput = document.getElementById("passwordInput");
   const passwordSubmit = document.getElementById("passwordSubmit");
@@ -170,56 +97,13 @@
 
   const mainUI = document.getElementById("mainUI");
   const startBtn = document.getElementById("startBtn");
+  const themeToggle = document.getElementById("themeToggle");
   const statusDiv = document.getElementById("status");
   const clock = document.getElementById("clock");
-  const themeToggle = document.getElementById("themeToggle");
-
-  const reactionVol = document.getElementById("reactionVolume");
-  const micAudioVol = document.getElementById("micAudioVolume");
-  const clickVol = document.getElementById("clickVolume");
-
-  const reactionVal = document.getElementById("reactionVal");
-  const micAudioVal = document.getElementById("micAudioVal");
-  const clickVal = document.getElementById("clickVal");
-
-  const clickSound = document.getElementById("clickSound");
-  const micActiveAudio = document.getElementById("micActiveAudio");
+  const reactionAudio = document.getElementById("reactionAudio");
 
   let recognition = null;
-  let speakAudio = null;
   let isRunning = false;
-
-  function updateVol(input, span) {
-    span.textContent = (+input.value).toFixed(2);
-    input.setAttribute("aria-valuenow", span.textContent);
-  }
-
-  reactionVol.oninput = () => {
-    updateVol(reactionVol, reactionVal);
-  };
-  micAudioVol.oninput = () => {
-    updateVol(micAudioVol, micAudioVal);
-    micActiveAudio.volume = +micAudioVol.value;
-  };
-  clickVol.oninput = () => {
-    updateVol(clickVol, clickVal);
-    clickSound.volume = +clickVol.value;
-  };
-
-  function playClick() {
-    clickSound.currentTime = 0;
-    clickSound.volume = +clickVol.value;
-    clickSound.play().catch(() => {});
-  }
-
-  function stopRecognition() {
-    if (recognition) {
-      recognition.onend = null;
-      recognition.stop();
-      recognition = null;
-    }
-    micActiveAudio.pause();
-  }
 
   function startRecognition() {
     if (recognition) {
@@ -237,14 +121,14 @@
     recognition.interimResults = false;
 
     recognition.onresult = (e) => {
-      const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
+      const text = e.results[e.results.length - 1][0].transcript.trim();
       statusDiv.textContent = `🗣️ "${text}"`;
-
-      stopRecognition();
+      recognition.stop();
       playReaction();
     };
 
     recognition.onend = () => {
+      if (isRunning && !reactionAudio.paused) return;
       if (isRunning) {
         recognition.start();
       }
@@ -252,51 +136,37 @@
 
     recognition.onerror = (e) => {
       console.error("Recognition error:", e.error);
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        alert("❌ Permission micro refusée");
-        stopRecognition();
-        isRunning = false;
-        startBtn.textContent = "Démarrer";
-        startBtn.setAttribute("aria-pressed", "false");
-        statusDiv.textContent = "Permission refusée";
-      }
+      statusDiv.textContent = `Erreur micro: ${e.error}`;
+      isRunning = false;
+      startBtn.textContent = "Démarrer";
+      startBtn.setAttribute("aria-pressed", "false");
     };
 
     recognition.start();
-    micActiveAudio.volume = +micAudioVol.value;
-    micActiveAudio.play().catch(() => {});
+    statusDiv.textContent = "🎤 En écoute...";
+  }
+
+  function stopRecognition() {
+    if (recognition) {
+      recognition.stop();
+      recognition = null;
+    }
   }
 
   function playReaction() {
-    if (speakAudio) {
-      speakAudio.pause();
-      speakAudio = null;
-    }
-    micActiveAudio.pause();
-
-    speakAudio = new Audio(reactionAudios[Math.floor(Math.random() * reactionAudios.length)]);
-    speakAudio.volume = +reactionVol.value;
-    speakAudio.play().catch(() => {});
-
-    speakAudio.onended = () => {
-      speakAudio = null;
-      playClick();
-      setTimeout(() => {
-        if (isRunning) startRecognition();
-      }, 300);
+    reactionAudio.play().catch(() => {});
+    reactionAudio.onended = () => {
+      if (isRunning) startRecognition();
     };
   }
 
   startBtn.onclick = () => {
-    playClick();
     isRunning = !isRunning;
-    startBtn.textContent = isRunning ? "Arrêter" : "Démarrer";
-    startBtn.setAttribute("aria-pressed", isRunning.toString());
-
     if (isRunning) {
       navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
         startRecognition();
-        statusDiv.textContent = "🎤 En écoute...";
+        startBtn.textContent = "Arrêter";
+        startBtn.setAttribute("aria-pressed", "true");
       }).catch(e => {
         alert("❌ Micro refusé : " + e.message);
         isRunning = false;
@@ -306,15 +176,16 @@
       });
     } else {
       stopRecognition();
-      speakAudio?.pause();
+      reactionAudio.pause();
+      reactionAudio.currentTime = 0;
+      startBtn.textContent = "Démarrer";
+      startBtn.setAttribute("aria-pressed", "false");
       statusDiv.textContent = "En pause.";
     }
   };
 
   themeToggle.onclick = () => {
-    playClick();
-    const currentTheme = document.body.getAttribute("data-theme");
-    if (currentTheme === "dark") {
+    if (document.body.getAttribute("data-theme") === "dark") {
       document.body.setAttribute("data-theme", "light");
       themeToggle.textContent = "Mode Sombre";
       themeToggle.setAttribute("aria-pressed", "true");
@@ -325,7 +196,6 @@
     }
   };
 
-  // Password logic
   passwordSubmit.onclick = () => {
     if (passwordInput.value === PASSWORD) {
       passwordError.textContent = "";
@@ -337,14 +207,13 @@
       passwordError.textContent = "Code incorrect";
     }
   };
+
   passwordInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") passwordSubmit.click();
   });
 
-  // Clock update
   setInterval(() => {
-    const now = new Date();
-    clock.textContent = now.toLocaleTimeString("fr-FR");
+    clock.textContent = new Date().toLocaleTimeString("fr-FR");
   }, 1000);
 })();
 </script>
