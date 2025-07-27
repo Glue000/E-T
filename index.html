@@ -12,50 +12,113 @@
     padding-top: 40vh;
     margin: 0;
   }
+  button {
+    font-size: 20px;
+    padding: 10px 20px;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
-
 <h1>🎤 Parlez</h1>
-<div id="status">Initialisation...</div>
+<button id="startBtn">Démarrer la reconnaissance</button>
+<div id="status">Prêt.</div>
 
 <script>
   const status = document.getElementById("status");
+  const startBtn = document.getElementById("startBtn");
 
-  function startRecognition() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      status.textContent = "❌ Reconnaissance non supportée.";
-      return;
-    }
-
-    const recognition = new SR();
-    recognition.lang = "fr-FR";
-    recognition.interimResults = false;
-    recognition.continuous = false;
-
-    recognition.onstart = () => {
-      status.textContent = "🎙️ Dites quelque chose...";
-    };
-
-    recognition.onresult = e => {
-      const txt = e.results[0][0].transcript;
-      status.textContent = `✅ Vous avez dit : "${txt}"`;
-    };
-
-    recognition.onerror = e => {
-      status.textContent = "❌ Erreur : " + e.error;
-    };
-
-    recognition.onend = () => {
-      status.textContent += "\n🎧 Micro désactivé.";
-    };
-
-    recognition.start();
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    status.textContent = "❌ Reconnaissance vocale non supportée sur ce navigateur.";
+    startBtn.disabled = true;
   }
 
-  navigator.mediaDevices.getUserMedia({ audio: true })
-    .then(() => startRecognition())
+  let recognition = null;
+  let isRecognizing = false;
+  let restartTimeout = null;
+
+  function startRecognition() {
+    if (!recognition) {
+      recognition = new SpeechRecognition();
+      recognition.lang = "fr-FR";
+      recognition.interimResults = false;
+      recognition.continuous = false; // Chrome mobile bug avec continuous true
+
+      recognition.onstart = () => {
+        isRecognizing = true;
+        status.textContent = "🎙️ Dites quelque chose...";
+        startBtn.textContent = "Arrêter la reconnaissance";
+      };
+
+      recognition.onresult = e => {
+        const txt = e.results[e.results.length - 1][0].transcript.trim();
+        status.textContent = `✅ Vous avez dit : "${txt}"`;
+        // ici, ajoute ta logique sur le texte reconnu
+      };
+
+      recognition.onerror = e => {
+        if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'not-allowed') {
+          // Pas de panique, on arrête ou relance selon cas
+          // no-speech => on relance
+          // aborted => arrêt manuel ou bug, on arrête
+          // not-allowed => permission refusée, on arrête
+          if (e.error === 'no-speech') {
+            // relance après un court délai
+            setTimeout(() => {
+              if (isRecognizing) recognition.start();
+            }, 500);
+          } else {
+            stopRecognition();
+          }
+        } else {
+          status.textContent = "❌ Erreur : " + e.error;
+          stopRecognition();
+        }
+      };
+
+      recognition.onend = () => {
+        isRecognizing = false;
+        startBtn.textContent = "Démarrer la reconnaissance";
+        // Relancer automatiquement la reconnaissance pour continuité
+        // sauf si arrêt volontaire
+        if (recognition && !restartTimeout && startBtn.textContent === "Arrêter la reconnaissance") {
+          restartTimeout = setTimeout(() => {
+            restartTimeout = null;
+            recognition.start();
+          }, 500);
+        } else {
+          if (!status.textContent.includes("✅")) {
+            status.textContent = "🎧 Micro désactivé ou fin de la reconnaissance.";
+          }
+        }
+      };
+    }
+
+    if (!isRecognizing) {
+      recognition.start();
+    }
+  }
+
+  function stopRecognition() {
+    if (recognition && isRecognizing) {
+      recognition.stop();
+      isRecognizing = false;
+      startBtn.textContent = "Démarrer la reconnaissance";
+    }
+  }
+
+  startBtn.addEventListener("click", () => {
+    if (isRecognizing) {
+      stopRecognition();
+    } else {
+      startRecognition();
+    }
+  });
+</script>
+</body>
+</html>
+startRecognition())
     .catch(e => {
       status.textContent = "❌ Micro refusé : " + e.message;
     });
