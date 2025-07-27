@@ -103,8 +103,10 @@ let speakAudio = null;
 let fillerVoice = new Audio();
 let fillerMusic = new Audio();
 let musicAudio = new Audio();
-let recognition;
+
+let recognition = null;
 let isRunning = false;
+let micStream = null; // track mic stream
 
 fillerVoice.loop = false;
 fillerMusic.loop = true;
@@ -185,8 +187,17 @@ function playReaction() {
 }
 
 function startRecognition() {
+  if (recognition) {
+    recognition.stop();
+    recognition = null;
+  }
+
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) return alert("❌ Reconnaissance non supportée");
+  if (!SR) {
+    alert("❌ Reconnaissance non supportée");
+    return;
+  }
+
   recognition = new SR();
   recognition.lang = "fr-FR";
   recognition.continuous = true;
@@ -198,23 +209,57 @@ function startRecognition() {
     playReaction();
   };
 
-  recognition.onend = () => { if (isRunning) recognition.start(); };
+  recognition.onend = () => {
+    if (isRunning) {
+      recognition.start();
+    }
+  };
+
+  recognition.onerror = (event) => {
+    console.error("Recognition error:", event.error);
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      alert("❌ Permission micro refusée");
+      stopRecognition();
+      isRunning = false;
+      startBtn.textContent = "Démarrer";
+      statusDiv.textContent = "Permission refusée";
+    }
+  };
+
   recognition.start();
+}
+
+function stopRecognition() {
+  if (recognition) {
+    recognition.onend = null; // prevent restart loop
+    recognition.stop();
+    recognition = null;
+  }
+  if (micStream) {
+    micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+  }
 }
 
 startBtn.onclick = () => {
   isRunning = !isRunning;
   if (isRunning) {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
-      s.getTracks().forEach(t => t.stop());
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      micStream = stream;
+      micStream.getTracks().forEach(t => t.stop());
       startRecognition();
       loopFiller();
       playInstrumental();
       startBtn.textContent = "Arrêter";
       statusDiv.textContent = "🎤 En écoute...";
-    }).catch(e => alert("❌ Micro refusé : " + e.message));
+    }).catch(e => {
+      alert("❌ Micro refusé : " + e.message);
+      isRunning = false;
+      startBtn.textContent = "Démarrer";
+      statusDiv.textContent = "En pause.";
+    });
   } else {
-    recognition?.stop();
+    stopRecognition();
     fillerVoice.pause();
     fillerMusic.pause();
     speakAudio?.pause();
