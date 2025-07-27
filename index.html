@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Assistant Vocal v0.1</title>
+  <title>Assistant Vocal v0.2</title>
   <style>
     html, body {
       margin: 0; padding: 0; height: 100%;
@@ -74,9 +74,7 @@
   <div id="status">En attente...</div>
 </div>
 
-<div id="version">Version 0.1</div>
-
-<audio id="reactionAudio" src="M/merci1.mp3" preload="auto"></audio>
+<div id="version">Version 0.2</div>
 
 <script>
   const login = document.getElementById("login");
@@ -85,11 +83,9 @@
   const error = document.getElementById("error");
   const startBtn = document.getElementById("startBtn");
   const statusDiv = document.getElementById("status");
-  const reactionAudio = document.getElementById("reactionAudio");
 
   let running = false;
 
-  // Mot de passe simple
   function checkPass() {
     if (pass.value === "8629") {
       login.style.display = "none";
@@ -120,19 +116,18 @@
     recognition.onresult = (e) => {
       const text = e.results[0][0].transcript;
       statusDiv.textContent = `🗣️ "${text}"`;
-      reactionAudio.play();
-    };
-
-    recognition.onend = () => {
-      if (running) {
-        setTimeout(() => startRecognition(), 500);
-      }
     };
 
     recognition.onerror = (e) => {
       statusDiv.textContent = "Erreur : " + e.error;
       running = false;
       startBtn.textContent = "Démarrer";
+    };
+
+    recognition.onend = () => {
+      if (running) {
+        setTimeout(() => startRecognition(), 500);
+      }
     };
 
     recognition.start();
