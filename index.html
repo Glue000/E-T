@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Test Micro Auto</title>
+  <title>Test Micro Auto v0.1</title>
   <style>
     body {
       background: black;
@@ -10,12 +10,24 @@
       font-family: sans-serif;
       text-align: center;
       padding-top: 40vh;
+      margin: 0;
+      position: relative;
+      height: 100vh;
+    }
+    #version {
+      position: absolute;
+      bottom: 10px;
+      width: 100%;
+      color: #888;
+      font-size: 0.9rem;
+      user-select: none;
     }
   </style>
 </head>
 <body>
   <h1>🎙️ Parlez</h1>
   <div id="status">Initialisation...</div>
+  <div id="version">Version 0.1</div>
 
   <script>
     const status = document.getElementById("status");
