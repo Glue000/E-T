@@ -5,78 +5,189 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>E = T</title>
   <style>
+    :root {
+      --bg-color: #000000;
+      --text-color: #ffffff;
+      --button-bg: #333333;
+      --button-hover: #555555;
+      --input-bg: #222222;
+      --input-text: #ffffff;
+      --border-color: #444444;
+    }
+    [data-theme="light"] {
+      --bg-color: #f0f0f0;
+      --text-color: #111111;
+      --button-bg: #dddddd;
+      --button-hover: #bbbbbb;
+      --input-bg: #ffffff;
+      --input-text: #111111;
+      --border-color: #cccccc;
+    }
     body {
-      background: black;
-      color: white;
+      background: var(--bg-color);
+      color: var(--text-color);
       font-family: Arial, sans-serif;
       text-align: center;
       padding: 20px;
+      transition: background 0.3s, color 0.3s;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    h1 {
+      margin-bottom: 1rem;
+      font-weight: 700;
+      font-size: 2.4rem;
     }
     button {
-      margin: 10px;
-      padding: 12px 24px;
-      font-size: 1.1rem;
+      margin: 10px 8px;
+      padding: 14px 28px;
+      font-size: 1.25rem;
       border: none;
-      border-radius: 8px;
-      background: #333;
-      color: white;
+      border-radius: 10px;
+      background: var(--button-bg);
+      color: var(--text-color);
       cursor: pointer;
-      transition: background 0.2s;
+      transition: background 0.3s;
+      min-width: 140px;
+      font-weight: 600;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.3);
     }
-    button:hover {
-      background: #555;
+    button:hover, button:focus {
+      background: var(--button-hover);
+      outline: none;
+    }
+    button:focus-visible {
+      outline: 3px solid #00aaff;
+      outline-offset: 2px;
     }
     input[type=range] {
-      width: 150px;
+      width: 160px;
       vertical-align: middle;
+      background: var(--input-bg);
+      -webkit-appearance: none;
+      height: 8px;
+      border-radius: 5px;
+      margin-left: 10px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #00aaff;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 5px rgba(0,170,255,0.7);
+      transition: background 0.3s;
+      margin-top: -7px;
+    }
+    input[type=range]:focus-visible::-webkit-slider-thumb {
+      box-shadow: 0 0 10px #0088cc;
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #00aaff;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 5px rgba(0,170,255,0.7);
+      transition: background 0.3s;
+    }
+    input[type=range]:focus-visible::-moz-range-thumb {
+      box-shadow: 0 0 10px #0088cc;
     }
     .vol-label {
-      display: block;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       margin-top: 15px;
+      font-size: 1.1rem;
+      gap: 8px;
+      user-select: none;
+    }
+    .vol-label span {
+      min-width: 45px;
+      text-align: left;
+      font-variant-numeric: tabular-nums;
+    }
+    #status {
+      margin-top: 30px;
+      font-size: 1.4rem;
+      font-weight: 600;
+      min-height: 36px;
+      user-select: none;
     }
     #clock {
-      font-size: 2em;
-      margin-top: 20px;
+      font-size: 2.4rem;
+      margin-top: 30px;
+      font-weight: 600;
+      user-select: none;
+      letter-spacing: 2px;
+    }
+    #themeToggle {
+      margin-top: 30px;
+      background: transparent;
+      border: 2px solid var(--button-bg);
+      color: var(--text-color);
+      min-width: auto;
+      padding: 10px 18px;
+      font-size: 1rem;
+      border-radius: 8px;
+      box-shadow: none;
+    }
+    #themeToggle:hover, #themeToggle:focus {
+      background: var(--button-bg);
+      outline: none;
+      box-shadow: 0 0 8px var(--button-hover);
+    }
+    #themeToggle:focus-visible {
+      outline: 3px solid #00aaff;
+      outline-offset: 2px;
     }
   </style>
 </head>
-<body>
+<body data-theme="dark">
 
 <h1>E = T</h1>
 
-<button onclick="playClick(); toggleOverlay()">🕶️ Plein écran</button>
-<button id="startBtn" onclick="playClick()">Démarrer</button>
-<button onclick="playClick(); playInstrumental()">⏭️ Changer Instrumental</button>
+<button onclick="playClick(); toggleOverlay()" aria-label="Activer le mode plein écran">🕶️ Plein écran</button>
+<button id="startBtn" onclick="playClick()" aria-pressed="false">Démarrer</button>
+<button onclick="playClick(); playInstrumental()" aria-label="Changer la musique instrumentale">⏭️ Changer Instrumental</button>
 
-<div class="vol-label">🔊 Volume Réaction :
-  <input type="range" id="reactionVolume" min="0" max="1" step="0.01" value="1">
+<div class="vol-label">
+  🔊 Volume Réaction :
+  <input type="range" id="reactionVolume" min="0" max="1" step="0.01" value="1" aria-valuemin="0" aria-valuemax="1" aria-valuenow="1" aria-label="Volume des réactions audio" />
   <span id="reactionVal">1.00</span>
 </div>
 
-<div class="vol-label">🔉 Volume Filler :
-  <input type="range" id="fillerVolume" min="0" max="1" step="0.01" value="0.3">
-  <span id="fillerVal">0.30</span>
-</div>
-
-<div class="vol-label">🎼 Volume Instrumental :
-  <input type="range" id="musicVolume" min="0" max="1" step="0.01" value="0.1">
+<div class="vol-label">
+  🎼 Volume Instrumental :
+  <input type="range" id="musicVolume" min="0" max="1" step="0.01" value="0.1" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0.1" aria-label="Volume de la musique instrumentale" />
   <span id="musicVal">0.10</span>
 </div>
 
-<div class="vol-label">🔔 Volume Click :
-  <input type="range" id="clickVolume" min="0" max="1" step="0.01" value="1">
+<div class="vol-label">
+  🔔 Volume Click :
+  <input type="range" id="clickVolume" min="0" max="1" step="0.01" value="1" aria-valuemin="0" aria-valuemax="1" aria-valuenow="1" aria-label="Volume du son au clic" />
   <span id="clickVal">1.00</span>
 </div>
 
-<div id="status">En attente...</div>
-<div id="clock">--:--:--</div>
+<div id="status" aria-live="polite" role="status">En attente...</div>
+<div id="clock" aria-label="Horloge">--:--:--</div>
+
+<button id="themeToggle" aria-pressed="false" aria-label="Changer le mode clair ou sombre">Changer Mode Clair/Sombre</button>
 
 <audio id="clickSound" src="click.mp3" preload="auto"></audio>
 
 <script>
 const reactionAudios = ["M/merci1.mp3"];
-const fillerVoices = ["M/merci2.mp3"];
-const fillerMusicTracks = ["audio/Bet You Can.mp3"];
 const musicTracks = [
   "audio/Exhilarate.mp3", "audio/Frost Waltz.mp3", "audio/Gymnopedie No 1.mp3",
   "audio/Gymnopedie No 2.mp3", "audio/Happy Boy End Theme.mp3",
@@ -86,44 +197,40 @@ const musicTracks = [
 const startBtn = document.getElementById("startBtn");
 const statusDiv = document.getElementById("status");
 const clock = document.getElementById("clock");
+const themeToggle = document.getElementById("themeToggle");
 
 const reactionVol = document.getElementById("reactionVolume");
-const fillerVol = document.getElementById("fillerVolume");
 const musicVol = document.getElementById("musicVolume");
 const clickVol = document.getElementById("clickVolume");
 
 const reactionVal = document.getElementById("reactionVal");
-const fillerVal = document.getElementById("fillerVal");
 const musicVal = document.getElementById("musicVal");
 const clickVal = document.getElementById("clickVal");
 
 const clickSound = document.getElementById("clickSound");
 
 let speakAudio = null;
-let fillerVoice = new Audio();
-let fillerMusic = new Audio();
 let musicAudio = new Audio();
-
 let recognition = null;
 let isRunning = false;
-let micStream = null; // track mic stream
+let micStream = null;
 
-fillerVoice.loop = false;
-fillerMusic.loop = true;
 musicAudio.loop = false;
 
-reactionVol.oninput = () => reactionVal.textContent = (+reactionVol.value).toFixed(2);
-fillerVol.oninput = () => {
-  fillerVal.textContent = (+fillerVol.value).toFixed(2);
-  fillerVoice.volume = +fillerVol.value;
-  fillerMusic.volume = +fillerVol.value;
+function updateAriaValue(input, span) {
+  span.textContent = (+input.value).toFixed(2);
+  input.setAttribute('aria-valuenow', (+input.value).toFixed(2));
+}
+
+reactionVol.oninput = () => {
+  updateAriaValue(reactionVol, reactionVal);
 };
 musicVol.oninput = () => {
-  musicVal.textContent = (+musicVol.value).toFixed(2);
+  updateAriaValue(musicVol, musicVal);
   musicAudio.volume = +musicVol.value;
 };
 clickVol.oninput = () => {
-  clickVal.textContent = (+clickVol.value).toFixed(2);
+  updateAriaValue(clickVol, clickVal);
   clickSound.volume = +clickVol.value;
 };
 
@@ -141,49 +248,16 @@ function playInstrumental() {
 }
 musicAudio.onended = playInstrumental;
 
-fillerVoice.onended = () => {
-  if (!speakAudio) loopFiller();
-};
-
-function loopFiller() {
-  if (speakAudio) return;
-  const voice = fillerVoices[Math.floor(Math.random() * fillerVoices.length)];
-  const music = fillerMusicTracks[Math.floor(Math.random() * fillerMusicTracks.length)];
-
-  fillerVoice.src = voice;
-  fillerVoice.volume = +fillerVol.value;
-  fillerVoice.play().catch(() => {});
-
-  fillerMusic.src = music;
-  fillerMusic.volume = +fillerVol.value;
-  fillerMusic.play().catch(() => {});
-}
-
-function playReaction() {
-  if (speakAudio) {
-    speakAudio.pause();
-    speakAudio = null;
+function stopRecognition() {
+  if (recognition) {
+    recognition.onend = null; // prevent restart
+    recognition.stop();
+    recognition = null;
   }
-
-  fillerVoice.pause();
-  fillerMusic.pause();
-  musicAudio.pause();
-  stopRecognition();
-
-  speakAudio = new Audio(reactionAudios[Math.floor(Math.random() * reactionAudios.length)]);
-  speakAudio.volume = +reactionVol.value;
-  speakAudio.play().catch(() => {});
-
-  speakAudio.onended = () => {
-    speakAudio = null;
-    loopFiller();
-    playInstrumental();
-    playClick();
-    setTimeout(() => {
-      playClick();
-      startRecognition();
-    }, 3000);
-  };
+  if (micStream) {
+    micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+  }
 }
 
 function startRecognition() {
@@ -206,22 +280,24 @@ function startRecognition() {
   recognition.onresult = e => {
     const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
     statusDiv.textContent = `🗣️ "${text}"`;
+
+    // User spoke, stop mic and play reaction
+    stopRecognition();
     playReaction();
   };
 
   recognition.onend = () => {
-    if (isRunning) {
-      recognition.start();
-    }
+    // Don't auto-restart; startRecognition called manually after reaction ends
   };
 
-  recognition.onerror = (event) => {
+  recognition.onerror = event => {
     console.error("Recognition error:", event.error);
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       alert("❌ Permission micro refusée");
       stopRecognition();
       isRunning = false;
       startBtn.textContent = "Démarrer";
+      startBtn.setAttribute("aria-pressed", "false");
       statusDiv.textContent = "Permission refusée";
     }
   };
@@ -229,42 +305,51 @@ function startRecognition() {
   recognition.start();
 }
 
-function stopRecognition() {
-  if (recognition) {
-    recognition.onend = null; // prevent restart loop
-    recognition.stop();
-    recognition = null;
+function playReaction() {
+  if (speakAudio) {
+    speakAudio.pause();
+    speakAudio = null;
   }
-  if (micStream) {
-    micStream.getTracks().forEach(t => t.stop());
-    micStream = null;
-  }
+
+  musicAudio.pause();
+
+  speakAudio = new Audio(reactionAudios[Math.floor(Math.random() * reactionAudios.length)]);
+  speakAudio.volume = +reactionVol.value;
+  speakAudio.play().catch(() => {});
+
+  speakAudio.onended = () => {
+    speakAudio = null;
+    playClick();
+    playInstrumental();
+    setTimeout(() => {
+      if (isRunning) startRecognition();
+    }, 300); // short delay before listening again
+  };
 }
 
 startBtn.onclick = () => {
+  playClick();
   isRunning = !isRunning;
+  startBtn.textContent = isRunning ? "Arrêter" : "Démarrer";
+  startBtn.setAttribute("aria-pressed", isRunning.toString());
   if (isRunning) {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
       micStream = stream;
       micStream.getTracks().forEach(t => t.stop());
       startRecognition();
-      loopFiller();
       playInstrumental();
-      startBtn.textContent = "Arrêter";
       statusDiv.textContent = "🎤 En écoute...";
     }).catch(e => {
       alert("❌ Micro refusé : " + e.message);
       isRunning = false;
       startBtn.textContent = "Démarrer";
+      startBtn.setAttribute("aria-pressed", "false");
       statusDiv.textContent = "En pause.";
     });
   } else {
     stopRecognition();
-    fillerVoice.pause();
-    fillerMusic.pause();
-    speakAudio?.pause();
     musicAudio.pause();
-    startBtn.textContent = "Démarrer";
+    speakAudio?.pause();
     statusDiv.textContent = "En pause.";
   }
 };
@@ -272,6 +357,20 @@ startBtn.onclick = () => {
 function toggleOverlay() {
   alert("Mode plein écran non implémenté ici.");
 }
+
+themeToggle.onclick = () => {
+  playClick();
+  const currentTheme = document.body.getAttribute('data-theme');
+  if (currentTheme === 'dark') {
+    document.body.setAttribute('data-theme', 'light');
+    themeToggle.textContent = "Mode Sombre";
+    themeToggle.setAttribute("aria-pressed", "true");
+  } else {
+    document.body.setAttribute('data-theme', 'dark');
+    themeToggle.textContent = "Mode Clair";
+    themeToggle.setAttribute("aria-pressed", "false");
+  }
+};
 
 setInterval(() => {
   const now = new Date();
