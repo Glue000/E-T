@@ -37,13 +37,14 @@
   let recognition = null;
   let isRecognizing = false;
   let restartTimeout = null;
+  const audio = new Audio("M/merci1.mp3");
 
   function startRecognition() {
     if (!recognition) {
       recognition = new SpeechRecognition();
       recognition.lang = "fr-FR";
       recognition.interimResults = false;
-      recognition.continuous = false; // Chrome mobile bug avec continuous true
+      recognition.continuous = false; // Chrome mobile bug with continuous=true
 
       recognition.onstart = () => {
         isRecognizing = true;
@@ -54,17 +55,25 @@
       recognition.onresult = e => {
         const txt = e.results[e.results.length - 1][0].transcript.trim();
         status.textContent = `✅ Vous avez dit : "${txt}"`;
-        // ici, ajoute ta logique sur le texte reconnu
+
+        // Play the audio once
+        audio.currentTime = 0;
+        audio.play();
+
+        // After audio ends, restart recognition
+        audio.onended = () => {
+          if (isRecognizing) {
+            recognition.start();
+          }
+        };
+
+        // Stop recognition while playing audio to avoid overlap
+        recognition.stop();
       };
 
       recognition.onerror = e => {
         if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'not-allowed') {
-          // Pas de panique, on arrête ou relance selon cas
-          // no-speech => on relance
-          // aborted => arrêt manuel ou bug, on arrête
-          // not-allowed => permission refusée, on arrête
           if (e.error === 'no-speech') {
-            // relance après un court délai
             setTimeout(() => {
               if (isRecognizing) recognition.start();
             }, 500);
@@ -80,8 +89,6 @@
       recognition.onend = () => {
         isRecognizing = false;
         startBtn.textContent = "Démarrer la reconnaissance";
-        // Relancer automatiquement la reconnaissance pour continuité
-        // sauf si arrêt volontaire
         if (recognition && !restartTimeout && startBtn.textContent === "Arrêter la reconnaissance") {
           restartTimeout = setTimeout(() => {
             restartTimeout = null;
@@ -116,13 +123,5 @@
     }
   });
 </script>
-</body>
-</html>
-startRecognition())
-    .catch(e => {
-      status.textContent = "❌ Micro refusé : " + e.message;
-    });
-</script>
-
 </body>
 </html>
