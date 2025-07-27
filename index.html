@@ -2,67 +2,60 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Test Micro Direct</title>
+  <title>Test Micro Auto</title>
   <style>
     body {
       background: black;
       color: white;
       font-family: sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
       text-align: center;
-      flex-direction: column;
+      padding-top: 40vh;
     }
   </style>
 </head>
 <body>
+  <h1>🎙️ Parlez</h1>
+  <div id="status">Initialisation...</div>
 
-<h1>🎤 Test Micro</h1>
-<div id="status">Chargement...</div>
+  <script>
+    const status = document.getElementById("status");
 
-<script>
-  const statusDiv = document.getElementById("status");
+    function startRecognition() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        status.textContent = "❌ Reconnaissance non supportée.";
+        return;
+      }
 
-  function startRecognition() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      statusDiv.textContent = "❌ Non supporté par ce navigateur.";
-      return;
+      const recognition = new SR();
+      recognition.lang = "fr-FR";
+      recognition.interimResults = false;
+      recognition.continuous = false;
+
+      recognition.onstart = () => {
+        status.textContent = "🎤 Micro activé, parlez...";
+      };
+
+      recognition.onresult = e => {
+        const txt = e.results[0][0].transcript;
+        status.textContent = `✅ Vous avez dit : "${txt}"`;
+      };
+
+      recognition.onerror = e => {
+        status.textContent = "❌ Erreur : " + e.error;
+      };
+
+      recognition.onend = () => {
+        status.textContent += "\n(Redémarrage...)";
+        setTimeout(startRecognition, 500);
+      };
+
+      recognition.start();
     }
 
-    const recognition = new SR();
-    recognition.lang = "fr-FR";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    recognition.onstart = () => {
-      statusDiv.textContent = "🎙️ Dites quelque chose...";
-    };
-
-    recognition.onresult = (e) => {
-      const result = e.results[0][0].transcript;
-      statusDiv.textContent = `✅ Vous avez dit : "${result}"`;
-    };
-
-    recognition.onerror = (e) => {
-      statusDiv.textContent = "❌ Erreur : " + e.error;
-    };
-
-    recognition.onend = () => {
-      statusDiv.textContent += "\n(Micro désactivé)";
-    };
-
-    recognition.start();
-  }
-
-  navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
-    startRecognition();
-  }).catch(err => {
-    statusDiv.textContent = "❌ Micro refusé : " + err.message;
-  });
-</script>
-
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(() => startRecognition())
+      .catch(e => status.textContent = "❌ Micro refusé : " + e.message);
+  </script>
 </body>
 </html>
