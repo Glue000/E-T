@@ -1,8 +1,8 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Balade en nature 0.4</title>
+  <title>Balade en nature 0.75</title>
   <style>
     body {
       background: black;
@@ -45,7 +45,7 @@
 <body>
 
 <div id="passwordScreen">
-  <h2>🔒 Entrez le mot de passe(0.75)</h2>
+  <h2>🔒 Entrez le mot de passe (0.75)</h2>
   <input type="password" id="passwordInput" placeholder="Mot de passe" />
   <button onclick="checkPassword()">Valider</button>
   <div id="passwordError" style="color:red;"></div>
@@ -53,7 +53,7 @@
 
 <div id="app" style="display:none;">
   <h1>🎤 Balade en nature 0.75</h1>
-  <button id="startBtn">Démarrer la reconnaissance (0.2)</button>
+  <button id="startBtn">Démarrer la reconnaissance</button>
   <button onclick="location.reload()">Arrêter</button>
   <div id="status">Prêt.</div>
 
@@ -94,13 +94,13 @@
   const appTimer = document.getElementById("appTimer");
 
   const keywordAudioMap = {
-    "merci": ["M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3"],
-    "cool": ["M/cool1.mp3", "M/cool2.mp3"],
-    "génial": ["M/genial1.mp3"],
-    "sympa": ["M/sympa1.mp3"],
-    "bravo": ["M/bravo1.mp3", "M/bravo2.mp3"],
-    "super": ["M/super1.mp3"],
-    "bien joué": ["M/bienjoue1.mp3"]
+    "merci": [
+      "M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3", "M/merci4.mp3",
+      "M/merci5.mp3", "M/merci6.mp3", "M/merci7.mp3", "M/merci8.mp3",
+      "M/merci9.mp3", "M/merci10.mp3", "M/merci11.mp3", "M/merci12.mp3",
+      "M/merci13.mp3", "M/merci14.mp3", "M/merci15.mp3", "M/merci16.mp3",
+      "M/merci17.mp3", "M/merci18.mp3"
+    ]
   };
 
   let recognition = null;
@@ -109,15 +109,16 @@
 
   function selectAudio(path) {
     selectedAudio.pause();
-    selectedAudio = new Audio(path);
+    selectedAudio.src = path;
+    selectedAudio.load();
     selectedAudio.onended = () => {
-      if (!isRecognizing && recognition) recognition.start();
+      isRecognizing = false;
     };
     selectedAudio.ontimeupdate = updateProgress;
     selectedAudio.onloadedmetadata = updateProgress;
-    status.textContent = "🔊 Audio sélectionné : " + path.split("/").pop();
     selectedAudio.currentTime = 0;
     selectedAudio.play();
+    status.textContent = "🔊 Audio sélectionné : " + path.split("/").pop();
   }
 
   function playRandomForKeyword(keyword) {
@@ -170,16 +171,9 @@
         const txt = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
         status.textContent = `✅ Vous avez dit : "${txt}"`;
 
-        let matched = false;
-        for (const keyword in keywordAudioMap) {
-          if (txt.includes(keyword)) {
-            playRandomForKeyword(keyword);
-            matched = true;
-            break;
-          }
-        }
-
-        if (!matched) {
+        if (txt === "merci") {
+          playRandomForKeyword("merci");
+        } else {
           status.textContent += " (aucun mot-clé trouvé)";
         }
 
@@ -196,9 +190,6 @@
       recognition.onend = () => {
         isRecognizing = false;
         startBtn.textContent = "Démarrer la reconnaissance";
-        if (selectedAudio.paused) {
-          recognition.start(); // relance même si pas de mot-clé
-        }
       };
     }
 
