@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Balade en nature 0.75</title>
+  <title>Balade en nature 0.76</title>
   <style>
     body {
       background: black;
@@ -105,19 +105,26 @@
 
   let recognition = null;
   let isRecognizing = false;
-  let selectedAudio = new Audio();
+  let selectedAudio = null;
 
   function selectAudio(path) {
-    selectedAudio.pause();
-    selectedAudio.src = path;
-    selectedAudio.load();
+    if (selectedAudio && !selectedAudio.paused) {
+      selectedAudio.pause();
+      selectedAudio.currentTime = 0;
+    }
+
+    selectedAudio = new Audio(path);
+    selectedAudio.volume = 1.0;
     selectedAudio.onended = () => {
       isRecognizing = false;
     };
     selectedAudio.ontimeupdate = updateProgress;
     selectedAudio.onloadedmetadata = updateProgress;
-    selectedAudio.currentTime = 0;
-    selectedAudio.play();
+
+    selectedAudio.play().catch(err => {
+      status.textContent = "❌ Erreur lecture audio : " + err.message;
+    });
+
     status.textContent = "🔊 Audio sélectionné : " + path.split("/").pop();
   }
 
@@ -134,7 +141,7 @@
   }
 
   function updateProgress() {
-    if (selectedAudio.duration > 0) {
+    if (selectedAudio && selectedAudio.duration > 0) {
       const current = selectedAudio.currentTime;
       const total = selectedAudio.duration;
       audioProgress.value = (current / total) * 100;
@@ -223,4 +230,3 @@
 
 </body>
 </html>
-
