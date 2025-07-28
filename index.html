@@ -2,14 +2,14 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>E = T</title>
+  <title>Test Micro Simple</title>
   <style>
     body {
       background: black;
       color: white;
       font-family: sans-serif;
       text-align: center;
-      padding-top: 5vh;
+      padding-top: 10vh;
       margin: 0;
     }
     button {
@@ -21,19 +21,12 @@
     #buttons {
       margin-top: 20px;
     }
-    input[type="range"] {
-      width: 60%;
-    }
-    #volumeDisplay {
-      margin-top: 10px;
-      font-size: 16px;
-    }
   </style>
 </head>
 <body>
 
 <h1>🎤 Parlez</h1>
-<button id="startBtn">Démarrer la reconnaissance (0.3)</button>
+<button id="startBtn">Démarrer la reconnaissance (0.2)</button>
 <div id="status">Prêt.</div>
 
 <div id="buttons">
@@ -42,26 +35,19 @@
   <button onclick="selectAudio('M/2S CB.mp3')">2S CB</button>
 </div>
 
-<h3>🔉 Volume max autorisé</h3>
-<input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="1" />
-<div id="volumeDisplay">Volume : 100%</div>
-
 <script>
   const status = document.getElementById("status");
   const startBtn = document.getElementById("startBtn");
-  const volumeSlider = document.getElementById("volumeSlider");
-  const volumeDisplay = document.getElementById("volumeDisplay");
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    status.textContent = "❌ Reconnaissance vocale non supportée sur ce navigateur.";
+    startBtn.disabled = true;
+  }
+
   let recognition = null;
   let isRecognizing = false;
   let selectedAudio = new Audio("M/merci1.mp3");
-
-  let maxVolume = 1;
-  volumeSlider.addEventListener("input", () => {
-    maxVolume = parseFloat(volumeSlider.value);
-    volumeDisplay.textContent = "Volume : " + Math.round(maxVolume * 100) + "%";
-  });
 
   function selectAudio(path) {
     selectedAudio = new Audio(path);
@@ -80,8 +66,8 @@
 
       recognition.onstart = () => {
         isRecognizing = true;
-        status.textContent = "🎙️ Dites quelque chose... (0.3)";
-        startBtn.textContent = "Arrêter la reconnaissance (0.3)";
+        status.textContent = "🎙️ Dites quelque chose...";
+        startBtn.textContent = "Arrêter la reconnaissance";
       };
 
       recognition.onresult = e => {
@@ -94,7 +80,7 @@
 
       recognition.onerror = e => {
         if (e.error === 'no-speech') {
-          status.textContent = "🤔 Rien entendu. Nouvelle tentative... (0.3)";
+          status.textContent = "🤔 Rien entendu. Nouvelle tentative...";
         } else {
           status.textContent = "❌ Erreur : " + e.error;
           stopRecognition();
@@ -104,7 +90,7 @@
       recognition.onend = () => {
         isRecognizing = false;
         if (selectedAudio.paused) {
-          recognition.start();
+          recognition.start(); // Auto-restart even if nothing was said
         }
       };
     }
@@ -112,44 +98,14 @@
     if (!isRecognizing) {
       recognition.start();
     }
-
-    startMicForVolume();
   }
 
   function stopRecognition() {
     if (recognition && isRecognizing) {
       recognition.stop();
       isRecognizing = false;
-      startBtn.textContent = "Démarrer la reconnaissance (0.3)";
+      startBtn.textContent = "Démarrer la reconnaissance";
     }
-  }
-
-  // 🎚️ Ajustement auto du volume selon bruit ambiant
-  function startMicForVolume() {
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      const audioCtx = new AudioContext();
-      const analyser = audioCtx.createAnalyser();
-      const mic = audioCtx.createMediaStreamSource(stream);
-      const dataArray = new Uint8Array(analyser.fftSize);
-      mic.connect(analyser);
-
-      function updateVolume() {
-        analyser.getByteTimeDomainData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          const val = (dataArray[i] - 128) / 128;
-          sum += val * val;
-        }
-        const rms = Math.sqrt(sum / dataArray.length);
-        const volume = Math.min(1, rms * 5); // Amplification
-        selectedAudio.volume = Math.min(volume, maxVolume);
-        requestAnimationFrame(updateVolume);
-      }
-
-      updateVolume();
-    }).catch(err => {
-      status.textContent = "🎙️ Autorisation du micro refusée. (0.3)";
-    });
   }
 
   startBtn.addEventListener("click", () => {
