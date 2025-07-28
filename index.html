@@ -101,15 +101,11 @@
     "M/merci17.mp3", "M/merci18.mp3",
   ];
 
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    status.textContent = "❌ Reconnaissance vocale non supportée sur ce navigateur.";
-    startBtn.disabled = true;
-  }
+  const keywords = ["merci", "cool", "génial"]; // Ajoute ici tes mots-clés
 
   let recognition = null;
   let isRecognizing = false;
-  let selectedAudio = new Audio("M/merci1.mp3");
+  let selectedAudio = new Audio();
 
   function selectAudio(path) {
     selectedAudio.pause();
@@ -120,13 +116,13 @@
     selectedAudio.ontimeupdate = updateProgress;
     selectedAudio.onloadedmetadata = updateProgress;
     status.textContent = "🔊 Audio sélectionné : " + path.split("/").pop();
+    selectedAudio.currentTime = 0;
+    selectedAudio.play();
   }
 
   function playRandomFromPile() {
     const randomPath = pileFiles[Math.floor(Math.random() * pileFiles.length)];
     selectAudio(randomPath);
-    selectedAudio.currentTime = 0;
-    selectedAudio.play();
   }
 
   function updateProgress() {
@@ -146,6 +142,12 @@
 
   function startRecognition() {
     if (!recognition) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        status.textContent = "❌ Reconnaissance vocale non supportée.";
+        return;
+      }
+
       recognition = new SpeechRecognition();
       recognition.lang = "fr-FR";
       recognition.interimResults = false;
@@ -158,27 +160,30 @@
       };
 
       recognition.onresult = e => {
-        const txt = e.results[e.results.length - 1][0].transcript.trim();
+        const txt = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
         status.textContent = `✅ Vous avez dit : "${txt}"`;
+
+        const found = keywords.find(word => txt.includes(word));
+        if (found) {
+          playRandomFromPile();
+        } else {
+          status.textContent += " (aucun mot-clé trouvé)";
+        }
         recognition.stop();
-        selectedAudio.currentTime = 0;
-        selectedAudio.play();
       };
 
       recognition.onerror = e => {
         if (e.error === 'no-speech') {
-          status.textContent = "🤔 Rien entendu. Nouvelle tentative...";
+          status.textContent = "🤔 Rien entendu.";
         } else {
           status.textContent = "❌ Erreur : " + e.error;
-          stopRecognition();
         }
+        stopRecognition();
       };
 
       recognition.onend = () => {
         isRecognizing = false;
-        if (selectedAudio.paused) {
-          recognition.start();
-        }
+        startBtn.textContent = "Démarrer la reconnaissance";
       };
     }
 
@@ -203,7 +208,7 @@
     }
   });
 
-  // App timer
+  // Timer app
   let secondsElapsed = 0;
   setInterval(() => {
     secondsElapsed++;
@@ -212,6 +217,7 @@
     appTimer.textContent = `⏱ Temps passé : ${min}:${sec}`;
   }, 1000);
 </script>
+
 
 </body>
 </html>
