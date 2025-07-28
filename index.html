@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
@@ -45,20 +45,20 @@
 <body>
 
 <div id="passwordScreen">
-  <h2>🔒 Entrez le mot de passe(0.74)</h2>
+  <h2>🔒 Entrez le mot de passe(0.75)</h2>
   <input type="password" id="passwordInput" placeholder="Mot de passe" />
   <button onclick="checkPassword()">Valider</button>
   <div id="passwordError" style="color:red;"></div>
 </div>
 
 <div id="app" style="display:none;">
-  <h1>🎤 Balade en nature 0.74</h1>
+  <h1>🎤 Balade en nature 0.75</h1>
   <button id="startBtn">Démarrer la reconnaissance (0.2)</button>
   <button onclick="location.reload()">Arrêter</button>
   <div id="status">Prêt.</div>
 
   <div id="buttons">
-    <button onclick="playRandomFromPile()">merci</button>
+    <button onclick="manualTrigger()">merci</button>
     <button onclick="selectAudio('M/1P V.mp3')">1P V</button>
     <button onclick="selectAudio('M/2S CB.mp3')">2S CB</button>
   </div>
@@ -93,15 +93,15 @@
   const audioProgress = document.getElementById("audioProgress");
   const appTimer = document.getElementById("appTimer");
 
-  const pileFiles = [
-    "M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3", "M/merci4.mp3",
-    "M/merci5.mp3", "M/merci6.mp3", "M/merci7.mp3", "M/merci8.mp3",
-    "M/merci9.mp3", "M/merci10.mp3", "M/merci11.mp3", "M/merci12.mp3",
-    "M/merci13.mp3", "M/merci14.mp3", "M/merci15.mp3", "M/merci16.mp3",
-    "M/merci17.mp3", "M/merci18.mp3",
-  ];
-
-  const keywords = ["merci", "cool", "génial"];
+  const keywordAudioMap = {
+    "merci": ["M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3"],
+    "cool": ["M/cool1.mp3", "M/cool2.mp3"],
+    "génial": ["M/genial1.mp3"],
+    "sympa": ["M/sympa1.mp3"],
+    "bravo": ["M/bravo1.mp3", "M/bravo2.mp3"],
+    "super": ["M/super1.mp3"],
+    "bien joué": ["M/bienjoue1.mp3"]
+  };
 
   let recognition = null;
   let isRecognizing = false;
@@ -120,9 +120,16 @@
     selectedAudio.play();
   }
 
-  function playRandomFromPile() {
-    const randomPath = pileFiles[Math.floor(Math.random() * pileFiles.length)];
-    selectAudio(randomPath);
+  function playRandomForKeyword(keyword) {
+    const files = keywordAudioMap[keyword];
+    if (files && files.length > 0) {
+      const randomFile = files[Math.floor(Math.random() * files.length)];
+      selectAudio(randomFile);
+    }
+  }
+
+  function manualTrigger() {
+    playRandomForKeyword("merci");
   }
 
   function updateProgress() {
@@ -163,36 +170,39 @@
         const txt = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
         status.textContent = `✅ Vous avez dit : "${txt}"`;
 
-        const found = keywords.find(word => txt.includes(word));
-        if (found) {
-          playRandomFromPile();
-        } else {
+        let matched = false;
+        for (const keyword in keywordAudioMap) {
+          if (txt.includes(keyword)) {
+            playRandomForKeyword(keyword);
+            matched = true;
+            break;
+          }
+        }
+
+        if (!matched) {
           status.textContent += " (aucun mot-clé trouvé)";
         }
+
         recognition.stop();
       };
 
       recognition.onerror = e => {
-        if (e.error === 'no-speech') {
-          status.textContent = "🤔 Rien entendu.";
-        } else {
-          status.textContent = "❌ Erreur : " + e.error;
-        }
-        stopRecognition();
+        status.textContent = e.error === 'no-speech'
+          ? "🤔 Rien entendu."
+          : "❌ Erreur : " + e.error;
+        recognition.stop();
       };
 
       recognition.onend = () => {
         isRecognizing = false;
         startBtn.textContent = "Démarrer la reconnaissance";
         if (selectedAudio.paused) {
-          recognition.start();
+          recognition.start(); // relance même si pas de mot-clé
         }
       };
     }
 
-    if (!isRecognizing) {
-      recognition.start();
-    }
+    if (!isRecognizing) recognition.start();
   }
 
   function stopRecognition() {
@@ -222,3 +232,4 @@
 
 </body>
 </html>
+
