@@ -9,8 +9,21 @@
       color: white;
       font-family: sans-serif;
       text-align: center;
-      padding-top: 10vh;
       margin: 0;
+    }
+    #passwordScreen {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: black;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    input[type="password"] {
+      font-size: 20px;
+      padding: 10px;
+      margin: 10px;
     }
     button {
       font-size: 18px;
@@ -31,25 +44,49 @@
 </head>
 <body>
 
-<h1>🎤 Balade en nature</h1>
-<button id="startBtn">Démarrer la reconnaissance (0.2)</button>
-<button onclick="location.reload()">Arrêter</button>
-<div id="status">Prêt.</div>
-
-<div id="buttons">
-  <button onclick="selectAudio('M/40s2B AH.mp3')">Merci 1</button>
-  <button onclick="selectAudio('M/1P V.mp3')">1P V</button>
-  <button onclick="selectAudio('M/2S CB.mp3')">2S CB</button>
+<div id="passwordScreen">
+  <h2>🔒 Entrez le mot de passe</h2>
+  <input type="password" id="passwordInput" placeholder="Mot de passe" />
+  <button onclick="checkPassword()">Valider</button>
+  <div id="passwordError" style="color:red;"></div>
 </div>
 
-<div id="progressContainer">
-  <input type="range" id="audioProgress" value="0" min="0" max="100" step="1" />
-  <div id="timeDisplay">00:00 / 00:00</div>
-</div>
+<div id="app" style="display:none;">
+  <h1>🎤 Balade en nature 0.5</h1>
+  <button id="startBtn">Démarrer la reconnaissance (0.2)</button>
+  <button onclick="location.reload()">Arrêter</button>
+  <div id="status">Prêt.</div>
 
-<div id="appTimer">⏱ Temps passé : 00:00</div>
+  <div id="buttons">
+    <button onclick="selectAudio('M/40s2B AH.mp3')">Merci 1</button>
+    <button onclick="selectAudio('M/1P V.mp3')">1P V</button>
+    <button onclick="selectAudio('M/2S CB.mp3')">2S CB</button>
+  </div>
+
+  <div id="progressContainer">
+    <input type="range" id="audioProgress" value="0" min="0" max="100" step="1" />
+    <div id="timeDisplay">00:00 / 00:00</div>
+  </div>
+
+  <div id="appTimer">⏱ Temps passé : 00:00</div>
+</div>
 
 <script>
+  const PASSWORD = "8629()jfldt!";
+  const passwordScreen = document.getElementById("passwordScreen");
+  const app = document.getElementById("app");
+  const passwordInput = document.getElementById("passwordInput");
+  const passwordError = document.getElementById("passwordError");
+
+  function checkPassword() {
+    if (passwordInput.value === PASSWORD) {
+      passwordScreen.style.display = "none";
+      app.style.display = "block";
+    } else {
+      passwordError.textContent = "Mot de passe incorrect.";
+    }
+  }
+
   const status = document.getElementById("status");
   const startBtn = document.getElementById("startBtn");
   const timeDisplay = document.getElementById("timeDisplay");
