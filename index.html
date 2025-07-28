@@ -1,28 +1,39 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8" />
-<title>Test Micro Simple</title>
-<style>
-  body {
-    background: black;
-    color: white;
-    font-family: sans-serif;
-    text-align: center;
-    padding-top: 40vh;
-    margin: 0;
-  }
-  button {
-    font-size: 20px;
-    padding: 10px 20px;
-    cursor: pointer;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <title>Test Micro Simple</title>
+  <style>
+    body {
+      background: black;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+      padding-top: 10vh;
+      margin: 0;
+    }
+    button {
+      font-size: 18px;
+      margin: 10px;
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+    #buttons {
+      margin-top: 20px;
+    }
+  </style>
 </head>
 <body>
+
 <h1>🎤 Parlez</h1>
 <button id="startBtn">Démarrer la reconnaissance</button>
 <div id="status">Prêt.</div>
+
+<div id="buttons">
+  <button onclick="selectAudio('M/merci1.mp3')">Merci 1</button>
+  <button onclick="selectAudio('M/1P V.mp3')">1P V</button>
+  <button onclick="selectAudio('M/2S CB.mp3')">2S CB</button>
+</div>
 
 <script>
   const status = document.getElementById("status");
@@ -36,14 +47,22 @@
 
   let recognition = null;
   let isRecognizing = false;
-  const audio = new Audio("M/merci1.mp3");
+  let selectedAudio = new Audio("M/merci1.mp3"); // Default
+
+  function selectAudio(path) {
+    selectedAudio = new Audio(path);
+    selectedAudio.onended = () => {
+      if (!isRecognizing && recognition) recognition.start();
+    };
+    status.textContent = "🔊 Audio sélectionné : " + path.split("/").pop();
+  }
 
   function startRecognition() {
     if (!recognition) {
       recognition = new SpeechRecognition();
       recognition.lang = "fr-FR";
       recognition.interimResults = false;
-      recognition.continuous = false; // mobile Chrome bug fix
+      recognition.continuous = false;
 
       recognition.onstart = () => {
         isRecognizing = true;
@@ -55,20 +74,16 @@
         const txt = e.results[e.results.length - 1][0].transcript.trim();
         status.textContent = `✅ Vous avez dit : "${txt}"`;
 
-        // Stop recognition before playing audio to avoid overlap
         recognition.stop();
-
-        audio.currentTime = 0;
-        audio.play();
+        selectedAudio.currentTime = 0;
+        selectedAudio.play();
       };
 
       recognition.onerror = e => {
         if (e.error === 'no-speech') {
           setTimeout(() => {
-            if (isRecognizing) recognition.start();
+            if (!isRecognizing) recognition.start();
           }, 500);
-        } else if (e.error === 'aborted' || e.error === 'not-allowed') {
-          stopRecognition();
         } else {
           status.textContent = "❌ Erreur : " + e.error;
           stopRecognition();
@@ -77,8 +92,7 @@
 
       recognition.onend = () => {
         isRecognizing = false;
-        // Only update UI if audio is not playing
-        if (audio.paused) {
+        if (selectedAudio.paused) {
           startBtn.textContent = "Démarrer la reconnaissance";
           status.textContent = "🎧 Micro désactivé ou fin de la reconnaissance.";
         }
@@ -89,13 +103,6 @@
       recognition.start();
     }
   }
-
-  // Restart recognition automatically after audio ends
-  audio.onended = () => {
-    if (!isRecognizing) {
-      recognition.start();
-    }
-  };
 
   function stopRecognition() {
     if (recognition && isRecognizing) {
@@ -113,5 +120,6 @@
     }
   });
 </script>
+
 </body>
 </html>
