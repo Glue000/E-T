@@ -52,13 +52,13 @@
 </div>
 
 <div id="app" style="display:none;">
-  <h1>🎤 Balade en nature 0.5</h1>
+  <h1>🎤 Balade en nature 0.6</h1>
   <button id="startBtn">Démarrer la reconnaissance (0.2)</button>
   <button onclick="location.reload()">Arrêter</button>
   <div id="status">Prêt.</div>
 
   <div id="buttons">
-    <button onclick="selectAudio('M/40s2B AH.mp3')">Merci 1</button>
+    <button onclick="playRandomFromPile()">merci</button>
     <button onclick="selectAudio('M/1P V.mp3')">1P V</button>
     <button onclick="selectAudio('M/2S CB.mp3')">2S CB</button>
   </div>
@@ -112,6 +112,26 @@
     selectedAudio.ontimeupdate = updateProgress;
     selectedAudio.onloadedmetadata = updateProgress;
     status.textContent = "🔊 Audio sélectionné : " + path.split("/").pop();
+    const pileFiles = [
+  "M/merci1.mp3",
+  "M/merci2.mp3",
+  "M/merci3.mp3",
+  "M/merci4.mp3",
+  "M/merci5.mp3",
+  "M/merci6.mp3",
+  "M/merci7.mp3",
+  "M/merci8.mp3",
+  "M/merci9.mp3",
+  "M/merci10.mp3",
+  "M/merci11.mp3",
+  "M/merci12.mp3",
+  "M/merci13.mp3",
+  "M/merci14.mp3",
+  "M/merci15.mp3",
+  "M/merci16.mp3",
+  "M/merci17.mp3",
+  "M/merci18.mp3",
+];
   }
 
   function updateProgress() {
@@ -122,6 +142,13 @@
       timeDisplay.textContent = formatTime(current) + " / " + formatTime(total);
     }
   }
+  
+function playRandomFromPile() {
+  const randomPath = pileFiles[Math.floor(Math.random() * pileFiles.length)];
+  selectAudio(randomPath);
+  selectedAudio.currentTime = 0;
+  selectedAudio.play();
+}
 
   function formatTime(seconds) {
     const min = Math.floor(seconds / 60);
