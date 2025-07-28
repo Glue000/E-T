@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Test Micro Simple</title>
+  <title>Balade en nature</title>
   <style>
     body {
       background: black;
@@ -21,12 +21,19 @@
     #buttons {
       margin-top: 20px;
     }
+    #progressContainer {
+      margin-top: 20px;
+    }
+    input[type="range"] {
+      width: 80%;
+    }
   </style>
 </head>
 <body>
 
-<h1>🎤 Parlez</h1>
+<h1>🎤 Balade en nature</h1>
 <button id="startBtn">Démarrer la reconnaissance (0.2)</button>
+<button onclick="location.reload()">Arrêter</button>
 <div id="status">Prêt.</div>
 
 <div id="buttons">
@@ -35,9 +42,19 @@
   <button onclick="selectAudio('M/2S CB.mp3')">2S CB</button>
 </div>
 
+<div id="progressContainer">
+  <input type="range" id="audioProgress" value="0" min="0" max="100" step="1" />
+  <div id="timeDisplay">00:00 / 00:00</div>
+</div>
+
+<div id="appTimer">⏱ Temps passé : 00:00</div>
+
 <script>
   const status = document.getElementById("status");
   const startBtn = document.getElementById("startBtn");
+  const timeDisplay = document.getElementById("timeDisplay");
+  const audioProgress = document.getElementById("audioProgress");
+  const appTimer = document.getElementById("appTimer");
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -50,11 +67,29 @@
   let selectedAudio = new Audio("M/merci1.mp3");
 
   function selectAudio(path) {
+    selectedAudio.pause();
     selectedAudio = new Audio(path);
     selectedAudio.onended = () => {
       if (!isRecognizing && recognition) recognition.start();
     };
+    selectedAudio.ontimeupdate = updateProgress;
+    selectedAudio.onloadedmetadata = updateProgress;
     status.textContent = "🔊 Audio sélectionné : " + path.split("/").pop();
+  }
+
+  function updateProgress() {
+    if (selectedAudio.duration > 0) {
+      const current = selectedAudio.currentTime;
+      const total = selectedAudio.duration;
+      audioProgress.value = (current / total) * 100;
+      timeDisplay.textContent = formatTime(current) + " / " + formatTime(total);
+    }
+  }
+
+  function formatTime(seconds) {
+    const min = Math.floor(seconds / 60);
+    const sec = Math.floor(seconds % 60);
+    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   }
 
   function startRecognition() {
@@ -90,7 +125,7 @@
       recognition.onend = () => {
         isRecognizing = false;
         if (selectedAudio.paused) {
-          recognition.start(); // Auto-restart even if nothing was said
+          recognition.start();
         }
       };
     }
@@ -115,6 +150,15 @@
       startRecognition();
     }
   });
+
+  // App timer
+  let secondsElapsed = 0;
+  setInterval(() => {
+    secondsElapsed++;
+    const min = String(Math.floor(secondsElapsed / 60)).padStart(2, '0');
+    const sec = String(secondsElapsed % 60).padStart(2, '0');
+    appTimer.textContent = `⏱ Temps passé : ${min}:${sec}`;
+  }, 1000);
 </script>
 
 </body>
