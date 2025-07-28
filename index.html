@@ -26,7 +26,7 @@
 <body>
 
 <h1>🎤 Parlez</h1>
-<button id="startBtn">Démarrer la reconnaissance (0.1)</button>
+<button id="startBtn">Démarrer la reconnaissance (0.2)</button>
 <div id="status">Prêt.</div>
 
 <div id="buttons">
@@ -47,7 +47,7 @@
 
   let recognition = null;
   let isRecognizing = false;
-  let selectedAudio = new Audio("M/merci1.mp3"); // Default
+  let selectedAudio = new Audio("M/merci1.mp3");
 
   function selectAudio(path) {
     selectedAudio = new Audio(path);
@@ -73,7 +73,6 @@
       recognition.onresult = e => {
         const txt = e.results[e.results.length - 1][0].transcript.trim();
         status.textContent = `✅ Vous avez dit : "${txt}"`;
-
         recognition.stop();
         selectedAudio.currentTime = 0;
         selectedAudio.play();
@@ -81,9 +80,7 @@
 
       recognition.onerror = e => {
         if (e.error === 'no-speech') {
-          setTimeout(() => {
-            if (!isRecognizing) recognition.start();
-          }, 500);
+          status.textContent = "🤔 Rien entendu. Nouvelle tentative...";
         } else {
           status.textContent = "❌ Erreur : " + e.error;
           stopRecognition();
@@ -93,8 +90,7 @@
       recognition.onend = () => {
         isRecognizing = false;
         if (selectedAudio.paused) {
-          startBtn.textContent = "Démarrer la reconnaissance";
-          status.textContent = "🎧 Micro désactivé ou fin de la reconnaissance.";
+          recognition.start(); // Auto-restart even if nothing was said
         }
       };
     }
@@ -123,3 +119,4 @@
 
 </body>
 </html>
+
