@@ -101,7 +101,7 @@
     "M/merci17.mp3", "M/merci18.mp3",
   ];
 
-  const keywords = ["merci", "cool", "génial"]; // Ajoute ici tes mots-clés
+  const keywords = ["merci", "cool", "génial"];
 
   let recognition = null;
   let isRecognizing = false;
@@ -184,6 +184,9 @@
       recognition.onend = () => {
         isRecognizing = false;
         startBtn.textContent = "Démarrer la reconnaissance";
+        if (selectedAudio.paused) {
+          recognition.start();
+        }
       };
     }
 
@@ -208,7 +211,6 @@
     }
   });
 
-  // Timer app
   let secondsElapsed = 0;
   setInterval(() => {
     secondsElapsed++;
@@ -217,7 +219,6 @@
     appTimer.textContent = `⏱ Temps passé : ${min}:${sec}`;
   }, 1000);
 </script>
-
 
 </body>
 </html>
