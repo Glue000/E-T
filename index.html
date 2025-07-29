@@ -180,13 +180,12 @@
         status.textContent = `✅ Vous avez dit : "${txt}"`;
 
         if (txt === "merci") {
+          recognition.stop(); // Stop mic so audio can play and restart after
           playRandomForKeyword("merci");
         } else {
           status.textContent += " (aucun mot-clé trouvé)";
           startRecognition(); // retry immediately
         }
-
-        recognition.stop();
       };
 
       recognition.onerror = e => {
