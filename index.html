@@ -93,7 +93,8 @@
   const audioProgress = document.getElementById("audioProgress");
   const appTimer = document.getElementById("appTimer");
 
-  const keywordAudioMap = {
+  // Keyword to audio files map for 'merci' mode
+   const keywordAudioMap = {
     "merci ok": [
       "M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3", "M/merci4.mp3",
       "M/merci5.mp3", "M/merci6.mp3", "M/merci7.mp3", "M/merci8.mp3",
@@ -110,14 +111,115 @@
   let recognition = null;
   let isRecognizing = false;
   let selectedAudio = null;
-  let playMode = null; // null or 'merci', '1PV', '2SCB'
+  let playMode = null; // 'merci', '1PV', '2SCB', or null
 
-  // Définit le mode de lecture (boutons)
-  function setPlayMode(mode) {
-    playMode = mode;
-    status.textContent = `🎯 Mode changé en : ${mode}`;
+  // Start speech recognition setup
+  function setupRecognition() {
+    if (recognition) return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      status.textContent = "❌ Reconnaissance vocale non supportée.";
+      return;
+    }
+    recognition = new SpeechRecognition();
+    recognition.lang = "fr-FR";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    recognition.onstart = () => {
+      isRecognizing = true;
+      status.textContent = "🎙️ Dites quelque chose...";
+      startBtn.textContent = "Arrêter la reconnaissance";
+    };
+
+    recognition.onresult = e => {
+      const txt = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
+      status.textContent = `✅ Vous avez dit : "${txt}"`;
+
+      if (playMode === "merci") {
+        // Check if any keyword in merci keywords is present in the transcript
+        let matchedKeyword = null;
+        for (const keyword in keywordAudioMap) {
+          // We check if the recognized phrase contains the keyword as whole word (simple)
+          // Adjust to your needs
+          if (txt.includes(keyword)) {
+            matchedKeyword = keyword;
+            break;
+          }
+        }
+        if (matchedKeyword) {
+          // Play random audio from that keyword list
+          playRandomForKeyword(matchedKeyword);
+        } else {
+          // No keyword said in merci mode -> just restart recognition without switching mode
+          startRecognition();
+        }
+      } else {
+        // In other modes (1PV, 2SCB), do NOT switch mode or play merci clips
+        // Just restart recognition
+        startRecognition();
+      }
+    };
+
+    recognition.onerror = e => {
+      if (e.error === 'no-speech') {
+        status.textContent = "🤔 Rien entendu.";
+      } else {
+        status.textContent = "❌ Erreur : " + e.error;
+      }
+      recognition.stop();
+    };
+
+    recognition.onend = () => {
+      isRecognizing = false;
+      startBtn.textContent = "Démarrer la reconnaissance";
+      // If no audio playing, restart recognition automatically
+      if (!selectedAudio || selectedAudio.paused) {
+        startRecognition();
+      }
+    };
   }
 
+  function startRecognition() {
+    if (!recognition) setupRecognition();
+    if (!isRecognizing) {
+      recognition.start();
+    }
+  }
+
+  function stopRecognition() {
+    if (recognition && isRecognizing) {
+      recognition.stop();
+      isRecognizing = false;
+      startBtn.textContent = "Démarrer la reconnaissance";
+    }
+  }
+
+  // Play random audio file from keyword's list
+  function playRandomForKeyword(keyword) {
+    const files = keywordAudioMap[keyword];
+    if (files && files.length > 0) {
+      const randomFile = files[Math.floor(Math.random() * files.length)];
+      selectAudio(randomFile, true);
+    } else {
+      // No files for that keyword, just restart recognition
+      startRecognition();
+    }
+  }
+
+  // Play fixed clip for non-merci modes
+  function playClipForMode() {
+    if (playMode === "1PV") {
+      selectAudio("M/1P V.mp3", true);
+    } else if (playMode === "2SCB") {
+      selectAudio("M/2S CB.mp3", true);
+    } else if (playMode === "merci") {
+      // In merci mode, wait for keywords, so no default clip played here automatically
+      // Could play silence or a waiting sound if you want
+    }
+  }
+
+  // Select and play audio with optional restart mic when audio ends
   function selectAudio(path, restartMic = false) {
     if (selectedAudio && !selectedAudio.paused) {
       selectedAudio.pause();
@@ -142,32 +244,7 @@
     status.textContent = "🔊 Lecture : " + path.split("/").pop();
   }
 
-  function playRandomForKeyword(keyword) {
-    const files = keywordAudioMap[keyword];
-    if (files && files.length > 0) {
-      const randomFile = files[Math.floor(Math.random() * files.length)];
-      selectAudio(randomFile, true);
-    } else {
-      // Pas de fichiers, relancer micro
-      startRecognition();
-    }
-  }
-
-  function playClipForMode() {
-    if (playMode === "merci") {
-      playRandomForKeyword("merci");
-    } else if (playMode === "1PV") {
-      selectAudio("M/1P V.mp3", true);
-    } else if (playMode === "2SCB") {
-      selectAudio("M/2S CB.mp3", true);
-    } else {
-      // Mode non défini, choix aléatoire 1PV ou 2SCB
-      const choice = Math.random() < 0.5 ? "1PV" : "2SCB";
-      playMode = choice;
-      playClipForMode();
-    }
-  }
-
+  // Update audio progress bar and time display
   function updateProgress() {
     if (selectedAudio && selectedAudio.duration > 0) {
       const current = selectedAudio.currentTime;
@@ -177,73 +254,30 @@
     }
   }
 
+  // Format seconds to mm:ss
   function formatTime(seconds) {
     const min = Math.floor(seconds / 60);
     const sec = Math.floor(seconds % 60);
     return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   }
 
-  function startRecognition() {
-    if (!recognition) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        status.textContent = "❌ Reconnaissance vocale non supportée.";
-        return;
-      }
-
-      recognition = new SpeechRecognition();
-      recognition.lang = "fr-FR";
-      recognition.interimResults = false;
-      recognition.continuous = false;
-
-      recognition.onstart = () => {
-        isRecognizing = true;
-        status.textContent = "🎙️ Dites quelque chose...";
-        startBtn.textContent = "Arrêter la reconnaissance";
-      };
-
-      recognition.onresult = e => {
-        const txt = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
-        status.textContent = `✅ Vous avez dit : "${txt}"`;
-
-        if (txt in keywordAudioMap) {
-          playMode = txt;  // mot-clé détecté
-        } else {
-          // Pas un mot-clé, joue clip par défaut (mode déjà défini ou aléatoire)
-          if (!playMode || playMode === "merci") {
-            // Si mode non défini ou "merci", on choisit aléatoirement 1PV ou 2SCB
-            playMode = Math.random() < 0.5 ? "1PV" : "2SCB";
-          }
-        }
-        recognition.stop(); // stop mic pour jouer audio
-        playClipForMode();
-      };
-
-      recognition.onerror = e => {
-        status.textContent = e.error === 'no-speech'
-          ? "🤔 Rien entendu."
-          : "❌ Erreur : " + e.error;
-        recognition.stop();
-      };
-
-      recognition.onend = () => {
-        isRecognizing = false;
-        startBtn.textContent = "Démarrer la reconnaissance";
-        // Si audio n'est pas en train de jouer, redémarre la reconnaissance
-        if (!selectedAudio || selectedAudio.paused) {
-          startRecognition();
-        }
-      };
+  // Set play mode ONLY on button click
+  function setPlayMode(mode) {
+    playMode = mode;
+    status.textContent = `🎯 Mode changé en : ${mode}`;
+    // Stop any playing audio and recognition to avoid overlaps
+    if (selectedAudio && !selectedAudio.paused) {
+      selectedAudio.pause();
+      selectedAudio.currentTime = 0;
     }
+    stopRecognition();
 
-    if (!isRecognizing) recognition.start();
-  }
-
-  function stopRecognition() {
-    if (recognition && isRecognizing) {
-      recognition.stop();
-      isRecognizing = false;
-      startBtn.textContent = "Démarrer la reconnaissance";
+    // For merci mode, start mic to listen for keywords
+    // For other modes, play the fixed clip
+    if (playMode === "merci") {
+      startRecognition();
+    } else {
+      playClipForMode();
     }
   }
 
@@ -266,3 +300,4 @@
 
 </body>
 </html>
+
