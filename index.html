@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Balade en nature 0.76</title>
+  <title>Balade en nature 0.77</title>
   <style>
     body {
       background: black;
@@ -45,7 +45,7 @@
 <body>
 
 <div id="passwordScreen">
-  <h2>🔒 Entrez le mot de passe (0.77)</h2>
+  <h2>🔒 Entrez le mot de passe (0.8)</h2>
   <input type="password" id="passwordInput" placeholder="Mot de passe" />
   <button onclick="checkPassword()">Valider</button>
   <div id="passwordError" style="color:red;"></div>
@@ -59,8 +59,8 @@
 
   <div id="buttons">
     <button onclick="manualTrigger()">merci</button>
-    <button onclick="selectAudio('M/1P V.mp3')">1P V</button>
-    <button onclick="selectAudio('M/2S CB.mp3')">2S CB</button>
+    <button onclick="selectAudio('M/1P V.mp3', false)">1P V</button>
+    <button onclick="selectAudio('M/2S CB.mp3', false)">2S CB</button>
   </div>
 
   <div id="progressContainer">
@@ -107,7 +107,7 @@
   let isRecognizing = false;
   let selectedAudio = null;
 
-  function selectAudio(path) {
+  function selectAudio(path, restartMic = false) {
     if (selectedAudio && !selectedAudio.paused) {
       selectedAudio.pause();
       selectedAudio.currentTime = 0;
@@ -115,11 +115,12 @@
 
     selectedAudio = new Audio(path);
     selectedAudio.volume = 1.0;
-    selectedAudio.onended = () => {
-      isRecognizing = false;
-    };
     selectedAudio.ontimeupdate = updateProgress;
     selectedAudio.onloadedmetadata = updateProgress;
+
+    selectedAudio.onended = () => {
+      if (restartMic) startRecognition();
+    };
 
     selectedAudio.play().catch(err => {
       status.textContent = "❌ Erreur lecture audio : " + err.message;
@@ -132,7 +133,7 @@
     const files = keywordAudioMap[keyword];
     if (files && files.length > 0) {
       const randomFile = files[Math.floor(Math.random() * files.length)];
-      selectAudio(randomFile);
+      selectAudio(randomFile, true);
     }
   }
 
@@ -182,6 +183,7 @@
           playRandomForKeyword("merci");
         } else {
           status.textContent += " (aucun mot-clé trouvé)";
+          startRecognition(); // retry immediately
         }
 
         recognition.stop();
