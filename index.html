@@ -9,7 +9,6 @@
       color: white;
       font-family: sans-serif;
       text-align: center;
-      margin: 0;
       padding: 20px;
     }
     button {
@@ -22,22 +21,20 @@
 </head>
 <body>
 
-<h1>🎤 Mic Keyword Response0.2</h1>
+<h1>🎤 Mic Keyword Response 0.3</h1>
 <button onclick="startProcess()">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 
 <script>
   const keywordMap = {
-    "ok": "M/a2.mp3",
-    "oui": "M/a3.mp3"
+    "ok": ["M/a2.mp3", "M/ok2.mp3"],
+    "oui": ["M/a3.mp3", "M/oui2.mp3"]
   };
-
-  const fallbackClip = "M/a1.mp3"; // Clip à jouer si aucun mot-clé n'est détecté
-  const youSaidClip = "positifR1.mp3"; // Clip fixe avant la relecture de la voix
+  const fallbackClips = ["M/fallback1.mp3", "M/fallback2.mp3"];
+  const youSaidClip = "positifR1.mp3";
 
   let mediaRecorder;
   let recordedChunks = [];
-  let recognition;
   let recordedBlob;
 
   function startProcess() {
@@ -47,7 +44,7 @@
       mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
       mediaRecorder.onstop = () => {
         recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
-        playAudioSequence();
+        playYouSaidSequence();
       };
       mediaRecorder.start();
       document.getElementById("status").textContent = "🎙️ Enregistrement 3s...";
@@ -55,8 +52,8 @@
     });
   }
 
-  function playAudioSequence() {
-    document.getElementById("status").textContent = "▶️ Lecture : you said this.mp3";
+  function playYouSaidSequence() {
+    document.getElementById("status").textContent = "▶️ Lecture : 'Tu as dit...'";
     const youSaid = new Audio(youSaidClip);
     youSaid.onended = () => playUserRecording();
     youSaid.play();
@@ -71,13 +68,15 @@
 
   function transcribeRecording() {
     document.getElementById("status").textContent = "🧠 Reconnaissance vocale...";
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       document.getElementById("status").textContent = "❌ Reconnaissance non supportée.";
+      playRandom(fallbackClips);
       return;
     }
 
-    recognition = new SpeechRecognition();
+    const recognition = new SpeechRecognition();
     recognition.lang = "fr-FR";
     recognition.interimResults = false;
     recognition.continuous = false;
@@ -85,40 +84,41 @@
     recognition.onresult = e => {
       const txt = e.results[0][0].transcript.toLowerCase();
       document.getElementById("status").textContent = `✅ Vous avez dit : "${txt}"`;
-      let matched = false;
+      let found = false;
       for (const key in keywordMap) {
         if (txt.includes(key)) {
-          matched = true;
-          playKeywordAudio(keywordMap[key]);
+          found = true;
+          playRandom(keywordMap[key]);
           return;
         }
       }
-      if (!matched) {
-        document.getElementById("status").textContent += " (aucun mot-clé détecté)";
-        playKeywordAudio(fallbackClip);
+      if (!found) {
+        playRandom(fallbackClips);
       }
     };
 
     recognition.onerror = e => {
       document.getElementById("status").textContent = "❌ Erreur : " + e.error;
-      playKeywordAudio(fallbackClip);
+      playRandom(fallbackClips);
     };
 
     recognition.onend = () => {
-      // If nothing was said, fallback will already play
+      // ne rien faire ici, le MP3 est déclenché dans onresult/onerror
     };
 
+    // 👉 On "feinte" la reconnaissance en lisant le micro EN MÊME TEMPS que l’enregistrement
     recognition.start();
+    setTimeout(() => recognition.stop(), 3000);
   }
 
-  function playKeywordAudio(path) {
+  function playRandom(list) {
+    const path = list[Math.floor(Math.random() * list.length)];
     document.getElementById("status").textContent = "▶️ Réponse : " + path;
     const audio = new Audio(path);
-    audio.onended = () => startProcess(); // boucle automatique
+    audio.onended = () => startProcess(); // boucle
     audio.play();
   }
 </script>
 
 </body>
 </html>
-
