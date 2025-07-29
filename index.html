@@ -45,7 +45,7 @@
 <body>
 
 <div id="passwordScreen">
-  <h2>🔒 Entrez le mot de passe (1)</h2>
+  <h2>🔒 Entrez le mot de passe (1.1)</h2>
   <input type="password" id="passwordInput" placeholder="Mot de passe" />
   <button onclick="checkPassword()">Valider</button>
   <div id="passwordError" style="color:red;"></div>
@@ -58,9 +58,9 @@
   <div id="status">Prêt.</div>
 
   <div id="buttons">
-    <button onclick="manualTrigger()">merci</button>
-    <button onclick="selectAudio('M/1P V.mp3', true)">1P V</button>
-    <button onclick="selectAudio('M/2S CB.mp3', true)">2S CB</button>
+    <button onclick="setPlayMode('merci')">Mode merci</button>
+    <button onclick="setPlayMode('1PV')">Mode 1P V</button>
+    <button onclick="setPlayMode('2SCB')">Mode 2S CB</button>
   </div>
 
   <div id="progressContainer">
@@ -106,6 +106,13 @@
   let recognition = null;
   let isRecognizing = false;
   let selectedAudio = null;
+  let playMode = null; // null or 'merci', '1PV', '2SCB'
+
+  // Définit le mode de lecture (boutons)
+  function setPlayMode(mode) {
+    playMode = mode;
+    status.textContent = `🎯 Mode changé en : ${mode}`;
+  }
 
   function selectAudio(path, restartMic = false) {
     if (selectedAudio && !selectedAudio.paused) {
@@ -115,6 +122,7 @@
 
     selectedAudio = new Audio(path);
     selectedAudio.volume = 1.0;
+
     selectedAudio.ontimeupdate = updateProgress;
     selectedAudio.onloadedmetadata = updateProgress;
 
@@ -124,9 +132,10 @@
 
     selectedAudio.play().catch(err => {
       status.textContent = "❌ Erreur lecture audio : " + err.message;
+      if (restartMic) startRecognition();
     });
 
-    status.textContent = "🔊 Audio sélectionné : " + path.split("/").pop();
+    status.textContent = "🔊 Lecture : " + path.split("/").pop();
   }
 
   function playRandomForKeyword(keyword) {
@@ -134,11 +143,25 @@
     if (files && files.length > 0) {
       const randomFile = files[Math.floor(Math.random() * files.length)];
       selectAudio(randomFile, true);
+    } else {
+      // Pas de fichiers, relancer micro
+      startRecognition();
     }
   }
 
-  function manualTrigger() {
-    playRandomForKeyword("merci");
+  function playClipForMode() {
+    if (playMode === "merci") {
+      playRandomForKeyword("merci");
+    } else if (playMode === "1PV") {
+      selectAudio("M/1P V.mp3", true);
+    } else if (playMode === "2SCB") {
+      selectAudio("M/2S CB.mp3", true);
+    } else {
+      // Mode non défini, choix aléatoire 1PV ou 2SCB
+      const choice = Math.random() < 0.5 ? "1PV" : "2SCB";
+      playMode = choice;
+      playClipForMode();
+    }
   }
 
   function updateProgress() {
@@ -179,13 +202,17 @@
         const txt = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
         status.textContent = `✅ Vous avez dit : "${txt}"`;
 
-        if (txt === "merci") {
-          recognition.stop(); // Stop mic so audio can play and restart after
-          playRandomForKeyword("merci");
+        if (txt in keywordAudioMap) {
+          playMode = txt;  // mot-clé détecté
         } else {
-          status.textContent += " (aucun mot-clé trouvé)";
-          startRecognition(); // retry immediately
+          // Pas un mot-clé, joue clip par défaut (mode déjà défini ou aléatoire)
+          if (!playMode || playMode === "merci") {
+            // Si mode non défini ou "merci", on choisit aléatoirement 1PV ou 2SCB
+            playMode = Math.random() < 0.5 ? "1PV" : "2SCB";
+          }
         }
+        recognition.stop(); // stop mic pour jouer audio
+        playClipForMode();
       };
 
       recognition.onerror = e => {
@@ -198,6 +225,10 @@
       recognition.onend = () => {
         isRecognizing = false;
         startBtn.textContent = "Démarrer la reconnaissance";
+        // Si audio n'est pas en train de jouer, redémarre la reconnaissance
+        if (!selectedAudio || selectedAudio.paused) {
+          startRecognition();
+        }
       };
     }
 
