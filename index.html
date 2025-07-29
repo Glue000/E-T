@@ -28,9 +28,12 @@
 
 <script>
   const keywordMap = {
-    "ok": "M/a5.mp3",
-    "oui": "M/a4.mp3"
+    "ok": "a5.mp3",
+    "oui": "a4.mp3"
   };
+
+  const fallbackClip = "fallback.mp3"; // Clip à jouer si aucun mot-clé n'est détecté
+  const youSaidClip = "a5.mp3"; // Clip fixe avant la relecture de la voix
 
   let mediaRecorder;
   let recordedChunks = [];
@@ -54,7 +57,7 @@
 
   function playAudioSequence() {
     document.getElementById("status").textContent = "▶️ Lecture : you said this.mp3";
-    const youSaid = new Audio("positifR1.mp3");
+    const youSaid = new Audio(youSaidClip);
     youSaid.onended = () => playUserRecording();
     youSaid.play();
   }
@@ -82,17 +85,27 @@
     recognition.onresult = e => {
       const txt = e.results[0][0].transcript.toLowerCase();
       document.getElementById("status").textContent = `✅ Vous avez dit : "${txt}"`;
+      let matched = false;
       for (const key in keywordMap) {
         if (txt.includes(key)) {
+          matched = true;
           playKeywordAudio(keywordMap[key]);
           return;
         }
       }
-      document.getElementById("status").textContent += " (aucun mot-clé détecté)";
+      if (!matched) {
+        document.getElementById("status").textContent += " (aucun mot-clé détecté)";
+        playKeywordAudio(fallbackClip);
+      }
     };
 
     recognition.onerror = e => {
       document.getElementById("status").textContent = "❌ Erreur : " + e.error;
+      playKeywordAudio(fallbackClip);
+    };
+
+    recognition.onend = () => {
+      // If nothing was said, fallback will already play
     };
 
     recognition.start();
@@ -101,9 +114,11 @@
   function playKeywordAudio(path) {
     document.getElementById("status").textContent = "▶️ Réponse : " + path;
     const audio = new Audio(path);
+    audio.onended = () => startProcess(); // boucle automatique
     audio.play();
   }
 </script>
 
 </body>
 </html>
+
