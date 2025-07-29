@@ -28,8 +28,8 @@
 
 <script>
   const keywordMap = {
-    "ok": "a5.mp3",
-    "oui": "a4.mp3"
+    "ok": "M/a5.mp3",
+    "oui": "M/a4.mp3"
   };
 
   let mediaRecorder;
@@ -54,7 +54,7 @@
 
   function playAudioSequence() {
     document.getElementById("status").textContent = "▶️ Lecture : you said this.mp3";
-    const youSaid = new Audio("a5.mp3");
+    const youSaid = new Audio("positifR1.mp3");
     youSaid.onended = () => playUserRecording();
     youSaid.play();
   }
