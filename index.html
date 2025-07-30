@@ -21,16 +21,15 @@
 </head>
 <body>
 
-<h1>🎤 Mic Keyword Response 0.6</h1>
+<h1>🎤 Mic Keyword Response 0.7</h1>
 <button onclick="startProcess()">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
-
 <script>
   const keywordMap = {
-    "ok": ["M/a2.mp3"],
-    "oui": ["M/a3.mp3"]
+    "ok": ["M/a2.mp3", "M/ok2.mp3", "M/ok3.mp3"],
+    "oui": ["M/a3.mp3", "M/oui2.mp3", "M/oui3.mp3"]
   };
-  const fallbackClips = ["M/merci1.mp3"];
+  const fallbackClips = ["M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3"];
   const youSaidClip = "positifR1.mp3";
   const RECORD_DURATION = 3000;
 
@@ -47,7 +46,7 @@
       mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
       mediaRecorder.onstop = () => {
         recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
-        transcribeRecording(); // Start transcription FIRST
+        transcribeRecording();
         playYouSaidSequence();
       };
       mediaRecorder.start();
@@ -71,8 +70,7 @@
       if (responsePath) {
         playResponse(responsePath);
       } else {
-        // fallback if recognition was too slow
-        playResponse(fallbackClips[Math.floor(Math.random() * fallbackClips.length)]);
+        playResponse(randomFromArray(fallbackClips));
       }
     };
     playback.play();
@@ -81,7 +79,7 @@
   function transcribeRecording() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      responsePath = fallbackClips[Math.floor(Math.random() * fallbackClips.length)];
+      responsePath = randomFromArray(fallbackClips);
       return;
     }
 
@@ -95,16 +93,16 @@
       document.getElementById("status").textContent = `✅ Vous avez dit : "${txt}"`;
       for (const key in keywordMap) {
         if (txt.includes(key)) {
-          responsePath = keywordMap[key][0];
+          responsePath = randomFromArray(keywordMap[key]);
           return;
         }
       }
-      responsePath = fallbackClips[0];
+      responsePath = randomFromArray(fallbackClips);
     };
 
     recognition.onerror = e => {
       document.getElementById("status").textContent = "❌ Erreur : " + e.error;
-      responsePath = fallbackClips[0];
+      responsePath = randomFromArray(fallbackClips);
     };
 
     recognition.start();
@@ -117,8 +115,11 @@
     response.onended = () => startProcess();
     response.play();
   }
-</script>
 
+  function randomFromArray(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+</script>
 </body>
 </html>
 
