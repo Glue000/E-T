@@ -1,369 +1,247 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <title>Soft Opposition Voice Reaction - Debug Improved</title>
-  <style>
-    body {
-      background: black;
-      color: white;
-      font-family: sans-serif;
-      text-align: center;
-      padding: 20px;
-    }
-    button {
-      font-size: 18px;
-      margin: 10px;
-      padding: 10px 20px;
-      cursor: pointer;
-    }
-    #log {
-      max-height: 200px;
-      overflow-y: auto;
-      border: 1px solid gray;
-      margin-top: 20px;
-      padding: 10px;
-      background: #111;
-      text-align: left;
-      font-size: 14px;
-    }
-  </style>
+<meta charset="UTF-8" />
+<title>Mic + Keywords + Adaptation pitch/rythme</title>
+<style>
+  body { background: #111; color: white; font-family: sans-serif; text-align:center; padding:20px; }
+  button { margin: 10px; padding: 15px 30px; font-size: 18px; cursor:pointer; }
+  #status { margin-top: 20px; font-weight: bold; }
+</style>
 </head>
 <body>
 
-<h1>🎤 Soft Opposition Voice Reaction (Debug Improved)</h1>
-<button id="startBtn">🎧 Démarrer</button>
-<div id="status">Prêt.</div>
-<div id="log"></div>
+<h1>Analyse vocale et réponse adaptative</h1>
+
+<button id="btnInvert">Mode Inversion (Pitch & Rythme opposés)</button>
+<button id="btnSimilar">Mode Similarité (Pitch & Rythme similaires)</button>
+
+<div id="status">Appuyez sur un bouton pour démarrer</div>
 
 <script>
-  const keywordMap = {
-    "ok": ["M/a2.mp3"],
-    "oui": ["M/a3.mp3"]
+(async () => {
+  // ----- CONFIG -----
+  const LISTEN_DURATION_MS = 3000; // temps d'écoute, modifiable facilement
+  const keywords = {
+    merci: ['M/merci1.mp3', 'M/merci2.mp3'],
+    oui: ['positifR1.mp3']
   };
-  const fallbackClips = ["M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3"];
-  let unusedFallbacks = [...fallbackClips];
+  const fallbackRecordings = ['M/merci13.mp3'];
 
-  const recordStartSound = "click.mp3";
-  const RECORD_DURATION = 2000;
+  // Pour éviter répétitions simples
+  let lastPlayed = {merci: null, oui: null, fallback: null};
 
-  let audioCtx = null;
-  let mediaRecorder = null;
-  let recordedChunks = [];
-  let userPitch = 200, userSpeed = 0.05, userVolume = 0.1;
+  // Etat mode : 'invert' ou 'similar'
+  let mode = null;
 
-  let lastRecognizedText = "";
+  // Accès audio
+  let audioContext = null;
+  let mediaStream = null;
+  let mediaStreamSource = null;
+  let analyser = null;
+  let dataArray = null;
 
-  document.getElementById("startBtn").onclick = () => {
-    startProcess();
-  };
-
-  // --- Added network status check ---
-  function updateNetworkStatus() {
-    const online = navigator.onLine;
-    logLine(online ? "🌐 Connecté à Internet" : "❌ Pas de connexion Internet");
-    updateStatus(online ? "🌐 En ligne" : "❌ Hors ligne");
+  // Utilitaires
+  function pickRandom(arr, last) {
+    if (arr.length === 1) return arr[0];
+    let filtered = arr.filter(x => x !== last);
+    if (filtered.length === 0) filtered = arr;
+    return filtered[Math.floor(Math.random() * filtered.length)];
   }
-  window.addEventListener('online', updateNetworkStatus);
-  window.addEventListener('offline', updateNetworkStatus);
-  updateNetworkStatus();
-  // --- End network status check ---
 
-  async function startProcess() {
-    try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtx.state === 'suspended') await audioCtx.resume();
+  // Analyse pitch (autocorrelation basique)
+  function autoCorrelate(buffer, sampleRate) {
+    // Source: https://github.com/cwilso/PitchDetect/blob/master/js/pitchdetect.js
+    let SIZE = buffer.length;
+    let MAX_SAMPLES = Math.floor(SIZE/2);
+    let bestOffset = -1;
+    let bestCorrelation = 0;
+    let rms = 0;
+    let foundGoodCorrelation = false;
+    let correlations = new Array(MAX_SAMPLES);
 
-      recordedChunks = [];
-      lastRecognizedText = "";
-
-      updateStatus("🔊 Jouer son de démarrage...");
-      await playStartSound();
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      updateStatus("🎙️ Micro activé, démarrage enregistrement...");
-
-      startRecognition();
-
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = e => {
-        recordedChunks.push(e.data);
-      };
-      mediaRecorder.onstop = () => {
-        // If recognition already gave a result and played audio, do nothing here.
-        // If no recognized text, fallback after recording:
-        if (!lastRecognizedText) {
-          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-          analyzeAndPlay(blob);
-        }
-      };
-
-      mediaRecorder.start();
-      updateStatus("🎙️ Enregistrement en cours...");
-
-      // Safety timeout to stop recording after RECORD_DURATION
-      setTimeout(() => {
-        if (mediaRecorder && mediaRecorder.state === "recording") {
-          mediaRecorder.stop();
-        }
-      }, RECORD_DURATION);
-    } catch (err) {
-      console.error("Erreur démarrage processus:", err);
-      updateStatus("❌ Erreur : " + err.message);
-      logLine("❌ " + err.message);
+    for (let i=0; i<SIZE; i++) {
+      let val = buffer[i];
+      rms += val*val;
     }
+    rms = Math.sqrt(rms/SIZE);
+    if (rms<0.01) return -1; // trop faible
+
+    let lastCorrelation=1;
+    for (let offset = 0; offset < MAX_SAMPLES; offset++) {
+      let correlation = 0;
+      for (let i=0; i<MAX_SAMPLES; i++) {
+        correlation += Math.abs((buffer[i]) - (buffer[i+offset]));
+      }
+      correlation = 1 - (correlation/MAX_SAMPLES);
+      correlations[offset] = correlation; 
+      if ((correlation > 0.9) && (correlation > lastCorrelation)) {
+        foundGoodCorrelation = true;
+        if (correlation > bestCorrelation) {
+          bestCorrelation = correlation;
+          bestOffset = offset;
+        }
+      } else if (foundGoodCorrelation) {
+        // found a good correlation & now decreasing
+        let shift = (correlations[bestOffset+1] - correlations[bestOffset-1])/correlations[bestOffset];  
+        return sampleRate/(bestOffset + 8*shift);
+      }
+      lastCorrelation = correlation;
+    }
+    if (bestCorrelation > 0.01) {
+      return sampleRate/bestOffset;
+    }
+    return -1;
   }
 
-  function updateStatus(text) {
-    document.getElementById("status").textContent = text;
-    console.log("Status:", text);
+  // Analyse rythme simplifiée (détection du tempo via énergie RMS) - approximation
+  function estimateTempo(buffer, sampleRate) {
+    // On calcule l'énergie RMS sur petits segments et on cherche des pics rythmiques
+    // Ici on fera un truc simple: calcul RMS global (plus bas = plus lent)
+    let rms = 0;
+    for (let i=0; i<buffer.length; i++) rms += buffer[i]*buffer[i];
+    rms = Math.sqrt(rms / buffer.length);
+    return rms; // Plus élevé = plus énergique (potentiellement plus rapide)
   }
 
-  function playStartSound() {
-    return new Promise((resolve) => {
-      const sound = new Audio(recordStartSound);
-      sound.volume = 0.5;
-      sound.onended = () => {
-        console.log("Son de démarrage joué");
-        resolve();
-      };
-      sound.onerror = (e) => {
-        console.warn("Erreur son de démarrage", e);
-        resolve();
-      };
-      sound.play().catch(err => {
-        console.warn("Play start sound catch:", err);
-        resolve();
-      });
+  // Jouer un mp3 avec pitch/rythme modifié (basique via playbackRate)
+  function playAudio(url, pitch, tempo) {
+    return new Promise(resolve => {
+      const audio = new Audio(url);
+      // Ajustement playbackRate pour tenter d'adapter pitch & rythme
+      // pitch ~ playbackRate
+      // tempo ~ playbackRate aussi (simplification)
+      // On combine selon mode
+      // playbackRate = tempo * pitch approx (dans [0.5 - 2])
+      let rate = pitch * tempo;
+      rate = Math.min(Math.max(rate, 0.5), 2);
+      audio.playbackRate = rate;
+
+      audio.onended = () => resolve();
+      audio.play();
     });
   }
 
-  function analyzeAndPlay(blob) {
-    const reader = new FileReader();
-    reader.onload = e => {
-      audioCtx.decodeAudioData(e.target.result).then(buffer => {
-        analyzeRecordedAudio(buffer);
-        // Play fallback MP3 (since no recognized text)
-        chooseAndPlayMP3();
-      }).catch(err => {
-        console.error("Erreur décodage audio:", err);
-        updateStatus("⚠️ Erreur décodage audio");
-        logLine("⚠️ Erreur décodage audio : " + err.message);
-        setTimeout(startProcess, 1000);
-      });
-    };
-    reader.onerror = (e) => {
-      console.error("Erreur lecture fichier audio:", e);
-      updateStatus("⚠️ Erreur lecture fichier audio");
-      logLine("⚠️ Erreur lecture fichier audio");
-      setTimeout(startProcess, 1000);
-    };
-    reader.readAsArrayBuffer(blob);
-  }
-
-  function analyzeRecordedAudio(buffer) {
-    try {
-      const rawData = buffer.getChannelData(0);
-      const sampleRate = buffer.sampleRate;
-
-      let maxCorr = 0, bestLag = 0;
-      for (let lag = 16; lag < 1000; lag++) {
-        let corr = 0;
-        for (let i = 0; i < rawData.length - lag; i++) {
-          corr += rawData[i] * rawData[i + lag];
-        }
-        if (corr > maxCorr) {
-          maxCorr = corr;
-          bestLag = lag;
-        }
-      }
-      userPitch = bestLag > 0 ? (sampleRate / bestLag) : 200;
-
-      let sumSquares = 0;
-      for (let i = 0; i < rawData.length; i++) {
-        sumSquares += rawData[i] * rawData[i];
-      }
-      userVolume = Math.min(Math.sqrt(sumSquares / rawData.length), 1);
-
-      if (userVolume < 0.02) {
-        logLine("⚠️ Volume très faible détecté, vérifiez votre micro ou parlez plus fort.");
-        updateStatus("⚠️ Volume micro faible");
-      }
-
-      let crossings = 0;
-      for (let i = 1; i < rawData.length; i++) {
-        if ((rawData[i - 1] < 0 && rawData[i] >= 0) || (rawData[i - 1] > 0 && rawData[i] <= 0)) {
-          crossings++;
-        }
-      }
-      userSpeed = crossings / rawData.length;
-
-      console.log(`Analyse: pitch=${userPitch.toFixed(1)}, volume=${userVolume.toFixed(2)}, speed=${userSpeed.toFixed(3)}`);
-      logLine(`📊 Analyse audio - pitch: ${userPitch.toFixed(1)}, volume: ${userVolume.toFixed(2)}, speed: ${userSpeed.toFixed(3)}`);
-    } catch (err) {
-      console.error("Erreur analyse audio:", err);
-      logLine("⚠️ Erreur analyse audio : " + err.message);
-    }
-  }
-
-  let recognition; // declared here for access outside
-
-  function startRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      updateStatus("⚠️ Reconnaissance vocale non supportée");
-      logLine("⚠️ Votre navigateur ne supporte pas la reconnaissance vocale.");
-      lastRecognizedText = "";
-      return;
-    }
-
-    recognition = new SpeechRecognition();
-    recognition.lang = "fr-FR";
-    recognition.interimResults = false;
-    recognition.continuous = false;
-
-    recognition.onresult = e => {
-      lastRecognizedText = e.results[0][0].transcript.toLowerCase();
-      updateStatus(`✅ Vous avez dit : "${lastRecognizedText}"`);
-      logLine(`🗣️ Reconnu : "${lastRecognizedText}"`);
-      // Play MP3 after recognition result
-      chooseAndPlayMP3();
-      // Stop media recorder immediately if recording
-      if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.stop();
-      }
-    };
-
-    recognition.onerror = e => {
-      console.warn("Erreur reconnaissance:", e.error);
-      updateStatus("⚠️ Erreur reconnaissance vocale: " + e.error);
-      logLine("⚠️ Erreur reconnaissance: " + e.error);
-      lastRecognizedText = "";
-      // Stop media recorder on error as fallback
-      if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.stop();
-      }
-    };
-
-    recognition.onend = () => {
-      console.log("Reconnaissance vocale terminée");
-    };
-
-    try {
-      recognition.start();
-      console.log("Reconnaissance vocale démarrée");
-      setTimeout(() => {
-        try { recognition.stop(); } catch {}
-      }, RECORD_DURATION);
-    } catch (err) {
-      console.error("Erreur démarrage reconnaissance:", err);
-      updateStatus("⚠️ Impossible de démarrer reconnaissance vocale");
-      logLine("⚠️ Impossible de démarrer reconnaissance vocale");
-    }
-  }
-
-  function chooseAndPlayMP3() {
-    let foundKey = null;
-    for (const key in keywordMap) {
-      if (lastRecognizedText.includes(key)) {
-        foundKey = key;
-        break;
+  // Process complet
+  async function process() {
+    if (!mediaStream) {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({audio:true});
+      } catch(e) {
+        statusDiv.textContent = "Erreur accès micro : " + e.message;
+        return;
       }
     }
-
-    let chosenPath;
-    if (foundKey) {
-      chosenPath = randomFromArray(keywordMap[foundKey]);
-      logLine(`🎯 Mot-clé trouvé: "${foundKey}" => ${chosenPath}`);
-    } else {
-      if (unusedFallbacks.length === 0) {
-        unusedFallbacks = [...fallbackClips];
-        logLine("♻️ Tous fallback joués, remise à zéro.");
-      }
-      const index = Math.floor(Math.random() * unusedFallbacks.length);
-      chosenPath = unusedFallbacks.splice(index, 1)[0];
-      logLine(`⚠️ Pas de mot-clé, fallback choisi: ${chosenPath}`);
+    if (!audioContext) audioContext = new AudioContext();
+    if (!mediaStreamSource) mediaStreamSource = audioContext.createMediaStreamSource(mediaStream);
+    if (!analyser) {
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      mediaStreamSource.connect(analyser);
+      dataArray = new Float32Array(analyser.fftSize);
     }
 
-    logTranscript(lastRecognizedText || "(rien)", chosenPath);
-    playSoftOppositionMP3(chosenPath);
-  }
+    statusDiv.textContent = `Ecoute pendant ${LISTEN_DURATION_MS/1000} secondes...`;
+    let chunks = [];
+    let sampleRate = audioContext.sampleRate;
 
-  function playSoftOppositionMP3(path) {
-    fetch(path)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.arrayBuffer();
-      })
-      .then(data => audioCtx.decodeAudioData(data))
-      .then(buffer => {
-        const source = audioCtx.createBufferSource();
-        source.buffer = buffer;
+    // Collect audio data
+    analyser.getFloatTimeDomainData(dataArray);
 
-        const basePitchFactor = 1 - (userPitch - 200) / 2000;
-        const pitchRandomness = (Math.random() - 0.5) * 0.05;
-        const pitchFactor = basePitchFactor + pitchRandomness;
+    // On attend la durée
+    await new Promise(r => setTimeout(r, LISTEN_DURATION_MS));
 
-        const baseSpeedFactor = 1 - userSpeed * 0.3;
-        const speedRandomness = (Math.random() - 0.5) * 0.05;
-        const speedFactor = baseSpeedFactor + speedRandomness;
+    analyser.getFloatTimeDomainData(dataArray);
 
-        const finalRate = Math.min(Math.max(pitchFactor * speedFactor, 0.85), 1.15);
-        source.playbackRate.value = finalRate;
+    // Analyse pitch & tempo
+    let pitch = autoCorrelate(dataArray, sampleRate);
+    if (pitch < 0) pitch = 440; // défaut A4 si non détecté
+    let tempoEnergy = estimateTempo(dataArray, sampleRate);
 
-        const gainNode = audioCtx.createGain();
-        const volumeFactor = 0.7 + (userVolume * 0.6);
-        gainNode.gain.value = volumeFactor;
+    statusDiv.textContent = `Pitch estimé: ${pitch.toFixed(1)} Hz, énergie rythmique: ${tempoEnergy.toFixed(3)}`;
 
-        const panner = new StereoPannerNode(audioCtx, {
-          pan: (Math.random() - 0.5) * 2
-        });
+    // Reconnaissance keywords simple: On peut juste simuler via reconnaissance vocale
+    // Ici, on utilise SpeechRecognition si disponible
+    let recognizedWord = null;
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      let SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      let recog = new SpeechRecognition();
+      recog.lang = 'fr-FR';
+      recog.interimResults = false;
+      recog.maxAlternatives = 1;
 
-        const filter = audioCtx.createBiquadFilter();
-        filter.type = "bandpass";
-        filter.frequency.value = 600 + (Math.random() * 800);
-        filter.Q.value = 5;
-
-        source.connect(filter).connect(panner).connect(gainNode).connect(audioCtx.destination);
-
-        source.onended = () => {
-          updateStatus("🔄 Lecture terminée, redémarrage...");
-          logLine("🔄 MP3 terminé, redémarrage processus...");
-          setTimeout(startProcess, 500);
+      recog.start();
+      recognizedWord = await new Promise(res => {
+        recog.onresult = (event) => {
+          let transcript = event.results[0][0].transcript.toLowerCase();
+          // Vérifie si un keyword est présent dans le texte
+          for (const kw of Object.keys(keywords)) {
+            if (transcript.includes(kw)) {
+              res(kw);
+              recog.stop();
+              return;
+            }
+          }
+          res(null);
+          recog.stop();
         };
-
-        source.start();
-        updateStatus(`▶️ Lecture opposition — rate: ${finalRate.toFixed(2)}, gain: ${volumeFactor.toFixed(2)}`);
-        console.log(`Lecture: pitch=${userPitch.toFixed(1)}, volume=${userVolume.toFixed(2)}, speed=${userSpeed.toFixed(3)}, rate=${finalRate.toFixed(2)}, gain=${volumeFactor.toFixed(2)}`);
-        logLine(`▶️ Lecture MP3: ${path} (rate: ${finalRate.toFixed(2)}, gain: ${volumeFactor.toFixed(2)})`);
-      })
-      .catch(err => {
-        console.error("Erreur lecture MP3:", err);
-        updateStatus("⚠️ Erreur lecture MP3: " + err.message);
-        logLine("⚠️ Erreur lecture MP3: " + err.message);
-        setTimeout(startProcess, 1000);
+        recog.onerror = () => res(null);
+        setTimeout(() => { recog.stop(); res(null); }, LISTEN_DURATION_MS);
       });
+    }
+
+    // Choix de la piste à jouer
+    let chosenUrl;
+    if (recognizedWord && keywords[recognizedWord]) {
+      chosenUrl = pickRandom(keywords[recognizedWord], lastPlayed[recognizedWord]);
+      lastPlayed[recognizedWord] = chosenUrl;
+    } else {
+      chosenUrl = pickRandom(fallbackRecordings, lastPlayed.fallback);
+      lastPlayed.fallback = chosenUrl;
+    }
+
+    // Calcule pitch et tempo de base pour inverser ou similaire
+    // Pour inversion on prend pitch inverse (A4=440 => 1/440 normalisé), tempo inverse
+    // Simplification : 
+    // Normalisation pitch entre 0.5 et 2 pour playbackRate
+    let basePitchRate = Math.min(Math.max(pitch/440, 0.5), 2);
+    let baseTempoRate = Math.min(Math.max(tempoEnergy*10, 0.5), 2); // facteur arbitraire
+
+    let pitchRate, tempoRate;
+    if (mode === 'invert') {
+      pitchRate = 1 / basePitchRate;
+      tempoRate = 1 / baseTempoRate;
+    } else {
+      pitchRate = basePitchRate;
+      tempoRate = baseTempoRate;
+    }
+
+    statusDiv.textContent += `\nLecture : ${chosenUrl} (pitchRate: ${pitchRate.toFixed(2)}, tempoRate: ${tempoRate.toFixed(2)})`;
+
+    await playAudio(chosenUrl, pitchRate, tempoRate);
+
+    // Recommencer en boucle si mode activé
+    if (mode !== null) process();
   }
 
-  function randomFromArray(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
-  }
+  // Gestion boutons
+  const btnInvert = document.getElementById('btnInvert');
+  const btnSimilar = document.getElementById('btnSimilar');
+  const statusDiv = document.getElementById('status');
 
-  function logTranscript(transcript, mp3) {
-    const logBox = document.getElementById("log");
-    const line = document.createElement("div");
-    line.textContent = `🗣️ "${transcript}" ➡️ 🎵 ${mp3}`;
-    logBox.appendChild(line);
-    logBox.scrollTop = logBox.scrollHeight;
-  }
-
-  function logLine(text) {
-    const logBox = document.getElementById("log");
-    const line = document.createElement("div");
-    line.textContent = text;
-    logBox.appendChild(line);
-    logBox.scrollTop = logBox.scrollHeight;
-  }
+  btnInvert.onclick = () => {
+    if (mode === 'invert') return; // déjà en mode invert
+    mode = 'invert';
+    statusDiv.textContent = "Mode INVERSION activé, démarrage...";
+    process();
+  };
+  btnSimilar.onclick = () => {
+    if (mode === 'similar') return; // déjà en mode similar
+    mode = 'similar';
+    statusDiv.textContent = "Mode SIMILARITE activé, démarrage...";
+    process();
+  };
+})();
 </script>
 
 </body>
