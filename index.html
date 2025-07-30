@@ -210,7 +210,7 @@
 
         const volumeFactor = 1.0 - userVolume * 0.05;
         const gainNode = audioCtx.createGain();
-        gainNode.gain.value = Math.min(Math.max(volumeFactor, 0.85), 1.0);
+        gainNode.gain.value = 1.0;
 
         const panner = new StereoPannerNode(audioCtx, {
           pan: (Math.random() - 0.5) * 2
