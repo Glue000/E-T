@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Inverse Voice Reaction + Modulated Speaking Sound</title>
+  <title>Inverse Voice Reaction with Keywords & Start Sound</title>
   <style>
     body {
       background: black;
@@ -21,28 +21,22 @@
 </head>
 <body>
 
-<h1>🎤 Inverse Voice Reaction + Modulated Speaking Sound 1.0</h1>
+<h1>🎤 Inverse Voice Reaction + Keywords</h1>
 <button onclick="startProcess()">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 
 <script>
   const keywordMap = {
-    "ok": ["M/a2.mp3", "M/ok2.mp3", "M/ok3.mp3"],
-    "oui": ["M/a3.mp3",]
+    "ok": ["M/a2.mp3"],
+    "oui": ["M/a3.mp3"]
   };
   const fallbackClips = ["M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3"];
-  const recordStartSound = "click.mp3";       // sound when recording starts
-  const speakingSound = "M/1P V.mp3";       // looping speaking sound during recording
+  const recordStartSound = "click.mp3"; // add your start sound mp3 here
   const RECORD_DURATION = 3000;
 
   let mediaRecorder, audioCtx, analyser;
   let recordedChunks = [], recordedBlob, responsePath;
   let userPitch = 200, userVolume = 0.1, userSpeed = 0.05;
-
-  let speakingSource = null;
-  let speakingGain = null;
-  let speakingBuffer = null;
-  let isRecording = false;
 
   function startProcess() {
     recordedChunks = [];
@@ -59,13 +53,7 @@
         micSource.connect(analyser);
 
         mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-
-        mediaRecorder.onstart = () => {
-          playSpeakingSound();
-        };
-
         mediaRecorder.onstop = () => {
-          stopSpeakingSound();
           recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
           analyzeMicInput();
           transcribeRecording();
@@ -85,77 +73,6 @@
       sound.onended = resolve;
       sound.play();
     });
-  }
-
-  function playSpeakingSound() {
-    if (speakingSource) return; // already playing
-    fetch(speakingSound)
-      .then(res => res.arrayBuffer())
-      .then(data => audioCtx.decodeAudioData(data))
-      .then(buffer => {
-        speakingBuffer = buffer;
-        speakingSource = audioCtx.createBufferSource();
-        speakingGain = audioCtx.createGain();
-
-        speakingSource.buffer = speakingBuffer;
-        speakingSource.loop = true;
-
-        speakingSource.connect(speakingGain).connect(audioCtx.destination);
-        speakingGain.gain.value = 0.3;
-
-        speakingSource.start();
-
-        isRecording = true;
-        updateSpeakingSoundParams();
-      });
-  }
-
-  function stopSpeakingSound() {
-    isRecording = false;
-    if (!speakingSource) return;
-    speakingSource.stop();
-    speakingSource.disconnect();
-    speakingGain.disconnect();
-    speakingSource = null;
-    speakingGain = null;
-  }
-
-  function updateSpeakingSoundParams() {
-    if (!isRecording || !speakingSource || !speakingGain) return;
-
-    const bufferLength = analyser.fftSize;
-    const data = new Float32Array(bufferLength);
-    analyser.getFloatTimeDomainData(data);
-
-    // Pitch estimation (autocorrelation)
-    let maxCorr = 0, bestLag = 0;
-    for (let lag = 16; lag < 1000; lag++) {
-      let corr = 0;
-      for (let i = 0; i < bufferLength - lag; i++) {
-        corr += data[i] * data[i + lag];
-      }
-      if (corr > maxCorr) {
-        maxCorr = corr;
-        bestLag = lag;
-      }
-    }
-    const pitch = bestLag > 0 ? (audioCtx.sampleRate / bestLag) : 200;
-
-    // Volume estimation (RMS)
-    let sumSquares = 0;
-    for (let i = 0; i < bufferLength; i++) {
-      sumSquares += data[i] * data[i];
-    }
-    const volume = Math.min(Math.sqrt(sumSquares / bufferLength), 1);
-
-    // Map pitch and volume to speaking sound playbackRate and gain
-    let playbackRate = 1 + (pitch - 200) / 600;
-    playbackRate = Math.min(Math.max(playbackRate, 0.8), 1.2);
-    speakingSource.playbackRate.value = playbackRate;
-
-    speakingGain.gain.value = 0.1 + volume * 0.5;
-
-    requestAnimationFrame(updateSpeakingSoundParams);
   }
 
   function analyzeMicInput() {
@@ -239,10 +156,10 @@
         const source = audioCtx.createBufferSource();
         source.buffer = buffer;
 
-        // Adjusted inversion logic — believable range
-        const pitchFactor = 1.3 - (userPitch / 400); 
-        const speedFactor = 1.1 - userSpeed;        
-        const volumeFactor = 1.4 - userVolume * 1.2; 
+        // Adjusted inversion logic — more believable
+        const pitchFactor = 1.3 - (userPitch / 400); // ~0.8-1.3 range
+        const speedFactor = 1.1 - userSpeed;         // ~0.7-1.1 range
+        const volumeFactor = 1.4 - userVolume * 1.2; // ~0.5-1.4 range
 
         const finalRate = Math.min(Math.max(speedFactor * pitchFactor, 0.75), 1.3);
         source.playbackRate.value = finalRate;
@@ -272,7 +189,5 @@
     return arr[Math.floor(Math.random() * arr.length)];
   }
 </script>
-
 </body>
 </html>
-
