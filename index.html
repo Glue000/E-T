@@ -66,7 +66,6 @@
   }
   window.addEventListener('online', updateNetworkStatus);
   window.addEventListener('offline', updateNetworkStatus);
-  // Initial network check at page load
   updateNetworkStatus();
   // --- End network status check ---
 
@@ -76,10 +75,11 @@
       if (audioCtx.state === 'suspended') await audioCtx.resume();
 
       recordedChunks = [];
+      lastRecognizedText = "";
+
       updateStatus("🔊 Jouer son de démarrage...");
       await playStartSound();
 
-      // Request mic access
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       updateStatus("🎙️ Micro activé, démarrage enregistrement...");
 
@@ -90,14 +90,22 @@
         recordedChunks.push(e.data);
       };
       mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-        analyzeAndPlay(blob);
+        // If recognition already gave a result and played audio, do nothing here.
+        // If no recognized text, fallback after recording:
+        if (!lastRecognizedText) {
+          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+          analyzeAndPlay(blob);
+        }
       };
 
       mediaRecorder.start();
       updateStatus("🎙️ Enregistrement en cours...");
+
+      // Safety timeout to stop recording after RECORD_DURATION
       setTimeout(() => {
-        if (mediaRecorder.state === "recording") mediaRecorder.stop();
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
       }, RECORD_DURATION);
     } catch (err) {
       console.error("Erreur démarrage processus:", err);
@@ -135,6 +143,7 @@
     reader.onload = e => {
       audioCtx.decodeAudioData(e.target.result).then(buffer => {
         analyzeRecordedAudio(buffer);
+        // Play fallback MP3 (since no recognized text)
         chooseAndPlayMP3();
       }).catch(err => {
         console.error("Erreur décodage audio:", err);
@@ -176,12 +185,10 @@
       }
       userVolume = Math.min(Math.sqrt(sumSquares / rawData.length), 1);
 
-      // --- Added volume warning if too low ---
       if (userVolume < 0.02) {
         logLine("⚠️ Volume très faible détecté, vérifiez votre micro ou parlez plus fort.");
         updateStatus("⚠️ Volume micro faible");
       }
-      // --- End volume warning ---
 
       let crossings = 0;
       for (let i = 1; i < rawData.length; i++) {
@@ -199,6 +206,8 @@
     }
   }
 
+  let recognition; // declared here for access outside
+
   function startRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -208,7 +217,7 @@
       return;
     }
 
-    const recognition = new SpeechRecognition();
+    recognition = new SpeechRecognition();
     recognition.lang = "fr-FR";
     recognition.interimResults = false;
     recognition.continuous = false;
@@ -217,6 +226,12 @@
       lastRecognizedText = e.results[0][0].transcript.toLowerCase();
       updateStatus(`✅ Vous avez dit : "${lastRecognizedText}"`);
       logLine(`🗣️ Reconnu : "${lastRecognizedText}"`);
+      // Play MP3 after recognition result
+      chooseAndPlayMP3();
+      // Stop media recorder immediately if recording
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+      }
     };
 
     recognition.onerror = e => {
@@ -224,6 +239,10 @@
       updateStatus("⚠️ Erreur reconnaissance vocale: " + e.error);
       logLine("⚠️ Erreur reconnaissance: " + e.error);
       lastRecognizedText = "";
+      // Stop media recorder on error as fallback
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+      }
     };
 
     recognition.onend = () => {
@@ -281,13 +300,19 @@
         const source = audioCtx.createBufferSource();
         source.buffer = buffer;
 
-        const pitchFactor = 1.25 - (userPitch / 700);
-        const speedFactor = 1.1 - userSpeed * 0.8;
-        const finalRate = Math.min(Math.max(pitchFactor * speedFactor, 0.7), 1.3);
+        const basePitchFactor = 1 - (userPitch - 200) / 2000;
+        const pitchRandomness = (Math.random() - 0.5) * 0.05;
+        const pitchFactor = basePitchFactor + pitchRandomness;
+
+        const baseSpeedFactor = 1 - userSpeed * 0.3;
+        const speedRandomness = (Math.random() - 0.5) * 0.05;
+        const speedFactor = baseSpeedFactor + speedRandomness;
+
+        const finalRate = Math.min(Math.max(pitchFactor * speedFactor, 0.85), 1.15);
         source.playbackRate.value = finalRate;
 
-        const volumeFactor = 1.0 - userVolume * 0.05;
         const gainNode = audioCtx.createGain();
+        const volumeFactor = 0.7 + (userVolume * 0.6);
         gainNode.gain.value = volumeFactor;
 
         const panner = new StereoPannerNode(audioCtx, {
@@ -343,3 +368,4 @@
 
 </body>
 </html>
+
