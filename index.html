@@ -22,10 +22,10 @@
 (async () => {
   const LISTEN_DURATION_MS = 3000;
   const keywords = {
-    merci: ['merci1.mp3', 'merci2.mp3', 'merci3.mp3'],
-    oui: ['oui1.mp3', 'oui2.mp3', 'oui3.mp3']
+    merci: ['M/merci1.mp3', 'M/merci2.mp3', 'M/merci3.mp3'],
+    oui: ['M/a1.mp3']
   };
-  const fallbackRecordings = ['fallback1.mp3', 'fallback2.mp3', 'fallback3.mp3'];
+  const fallbackRecordings = ['M/a2.mp3'];
 
   let lastPlayed = {merci: null, oui: null, fallback: null};
   let mode = null;
