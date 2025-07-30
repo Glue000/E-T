@@ -21,18 +21,18 @@
 </head>
 <body>
 
-<h1>🎤 Inverse Voice Reaction</h1>
+<h1>🎤 Inverse Voice Reaction (0.8)</h1>
 <button onclick="startProcess()">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 
 <script>
   const keywordMap = {
-    "ok": ["M/a2.mp3", "M/ok2.mp3", "M/ok3.mp3"],
-    "oui": ["M/a3.mp3", "M/oui2.mp3", "M/oui3.mp3"]
+    "ok": ["M/a2.mp3"],
+    "oui": ["M/a3.mp3"]
   };
   const fallbackClips = ["M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3"];
   const youSaidClip = "positifR1.mp3";
-  const RECORD_DURATION = 3000;
+  const RECORD_DURATION = 6000;
 
   let mediaRecorder, audioCtx, analyser;
   let recordedChunks = [], recordedBlob, responsePath;
