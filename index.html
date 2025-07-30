@@ -21,7 +21,7 @@
 </head>
 <body>
 
-<h1>🎤 Mic Keyword Response 0.5</h1>
+<h1>🎤 Mic Keyword Response 0.6</h1>
 <button onclick="startProcess()">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 
@@ -32,19 +32,22 @@
   };
   const fallbackClips = ["M/merci1.mp3"];
   const youSaidClip = "positifR1.mp3";
-  const RECORD_DURATION = 3000; // <-- change this to adjust recording time
+  const RECORD_DURATION = 3000;
 
   let mediaRecorder;
   let recordedChunks = [];
   let recordedBlob;
+  let responsePath = null;
 
   function startProcess() {
     recordedChunks = [];
+    responsePath = null;
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
       mediaRecorder = new MediaRecorder(stream);
       mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
       mediaRecorder.onstop = () => {
         recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+        transcribeRecording(); // Start transcription FIRST
         playYouSaidSequence();
       };
       mediaRecorder.start();
@@ -63,17 +66,22 @@
   function playUserRecording() {
     document.getElementById("status").textContent = "▶️ Lecture de votre voix...";
     const playback = new Audio(URL.createObjectURL(recordedBlob));
-    playback.onended = () => transcribeRecording();
+    playback.onended = () => {
+      document.getElementById("status").textContent = "⏭️ Réaction...";
+      if (responsePath) {
+        playResponse(responsePath);
+      } else {
+        // fallback if recognition was too slow
+        playResponse(fallbackClips[Math.floor(Math.random() * fallbackClips.length)]);
+      }
+    };
     playback.play();
   }
 
   function transcribeRecording() {
-    document.getElementById("status").textContent = "🧠 Reconnaissance vocale...";
-
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      document.getElementById("status").textContent = "❌ Reconnaissance non supportée.";
-      playResponse(fallbackClips);
+      responsePath = fallbackClips[Math.floor(Math.random() * fallbackClips.length)];
       return;
     }
 
@@ -87,27 +95,26 @@
       document.getElementById("status").textContent = `✅ Vous avez dit : "${txt}"`;
       for (const key in keywordMap) {
         if (txt.includes(key)) {
-          playResponse(keywordMap[key]);
+          responsePath = keywordMap[key][0];
           return;
         }
       }
-      playResponse(fallbackClips);
+      responsePath = fallbackClips[0];
     };
 
     recognition.onerror = e => {
       document.getElementById("status").textContent = "❌ Erreur : " + e.error;
-      playResponse(fallbackClips);
+      responsePath = fallbackClips[0];
     };
 
     recognition.start();
     setTimeout(() => recognition.stop(), 3000);
   }
 
-  function playResponse(list) {
-    const path = list[Math.floor(Math.random() * list.length)];
+  function playResponse(path) {
     document.getElementById("status").textContent = "▶️ Réponse : " + path;
     const response = new Audio(path);
-    response.onended = () => startProcess(); // restart after response
+    response.onended = () => startProcess();
     response.play();
   }
 </script>
