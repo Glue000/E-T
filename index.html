@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Inverse Voice Reaction</title>
+  <title>Inverse Voice Reaction + Modulated Speaking Sound</title>
   <style>
     body {
       background: black;
@@ -21,47 +21,141 @@
 </head>
 <body>
 
-<h1>🎤 Inverse Voice Reaction (0.9)</h1>
+<h1>🎤 Inverse Voice Reaction + Modulated Speaking Sound</h1>
 <button onclick="startProcess()">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 
 <script>
   const keywordMap = {
-    "ok": ["M/a2.mp3"],
-    "oui": ["M/a3.mp3"]
+    "ok": ["M/a2.mp3", "M/ok2.mp3", "M/ok3.mp3"],
+    "oui": ["M/a3.mp3", "M/oui2.mp3", "M/oui3.mp3"]
   };
   const fallbackClips = ["M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3"];
-  const youSaidClip = "positifR1.mp3";
-  const RECORD_DURATION = 6000;
+  const recordStartSound = "start-sound.mp3";       // sound when recording starts
+  const speakingSound = "speaking-sound.mp3";       // looping speaking sound during recording
+  const RECORD_DURATION = 3000;
 
   let mediaRecorder, audioCtx, analyser;
   let recordedChunks = [], recordedBlob, responsePath;
-  let userPitch = 1, userVolume = 1, userSpeed = 1;
+  let userPitch = 200, userVolume = 0.1, userSpeed = 0.05;
+
+  let speakingSource = null;
+  let speakingGain = null;
+  let speakingBuffer = null;
+  let isRecording = false;
 
   function startProcess() {
     recordedChunks = [];
     responsePath = null;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      mediaRecorder = new MediaRecorder(stream);
-      const micSource = audioCtx.createMediaStreamSource(stream);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
-      micSource.connect(analyser);
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
 
-      mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-      mediaRecorder.onstop = () => {
-        recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
-        analyzeMicInput();
-        transcribeRecording();
-        playYouSaidSequence();
-      };
+    playStartSound().then(() => {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        mediaRecorder = new MediaRecorder(stream);
+        const micSource = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        micSource.connect(analyser);
 
-      mediaRecorder.start();
-      document.getElementById("status").textContent = "🎙️ Enregistrement...";
-      setTimeout(() => mediaRecorder.stop(), RECORD_DURATION);
+        mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+
+        mediaRecorder.onstart = () => {
+          playSpeakingSound();
+        };
+
+        mediaRecorder.onstop = () => {
+          stopSpeakingSound();
+          recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+          analyzeMicInput();
+          transcribeRecording();
+        };
+
+        mediaRecorder.start();
+        document.getElementById("status").textContent = "🎙️ Enregistrement...";
+        setTimeout(() => mediaRecorder.stop(), RECORD_DURATION);
+      });
     });
+  }
+
+  function playStartSound() {
+    return new Promise(resolve => {
+      const sound = new Audio(recordStartSound);
+      sound.volume = 0.5;
+      sound.onended = resolve;
+      sound.play();
+    });
+  }
+
+  function playSpeakingSound() {
+    if (speakingSource) return; // already playing
+    fetch(speakingSound)
+      .then(res => res.arrayBuffer())
+      .then(data => audioCtx.decodeAudioData(data))
+      .then(buffer => {
+        speakingBuffer = buffer;
+        speakingSource = audioCtx.createBufferSource();
+        speakingGain = audioCtx.createGain();
+
+        speakingSource.buffer = speakingBuffer;
+        speakingSource.loop = true;
+
+        speakingSource.connect(speakingGain).connect(audioCtx.destination);
+        speakingGain.gain.value = 0.3;
+
+        speakingSource.start();
+
+        isRecording = true;
+        updateSpeakingSoundParams();
+      });
+  }
+
+  function stopSpeakingSound() {
+    isRecording = false;
+    if (!speakingSource) return;
+    speakingSource.stop();
+    speakingSource.disconnect();
+    speakingGain.disconnect();
+    speakingSource = null;
+    speakingGain = null;
+  }
+
+  function updateSpeakingSoundParams() {
+    if (!isRecording || !speakingSource || !speakingGain) return;
+
+    const bufferLength = analyser.fftSize;
+    const data = new Float32Array(bufferLength);
+    analyser.getFloatTimeDomainData(data);
+
+    // Pitch estimation (autocorrelation)
+    let maxCorr = 0, bestLag = 0;
+    for (let lag = 16; lag < 1000; lag++) {
+      let corr = 0;
+      for (let i = 0; i < bufferLength - lag; i++) {
+        corr += data[i] * data[i + lag];
+      }
+      if (corr > maxCorr) {
+        maxCorr = corr;
+        bestLag = lag;
+      }
+    }
+    const pitch = bestLag > 0 ? (audioCtx.sampleRate / bestLag) : 200;
+
+    // Volume estimation (RMS)
+    let sumSquares = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      sumSquares += data[i] * data[i];
+    }
+    const volume = Math.min(Math.sqrt(sumSquares / bufferLength), 1);
+
+    // Map pitch and volume to speaking sound playbackRate and gain
+    let playbackRate = 1 + (pitch - 200) / 600;
+    playbackRate = Math.min(Math.max(playbackRate, 0.8), 1.2);
+    speakingSource.playbackRate.value = playbackRate;
+
+    speakingGain.gain.value = 0.1 + volume * 0.5;
+
+    requestAnimationFrame(updateSpeakingSoundParams);
   }
 
   function analyzeMicInput() {
@@ -88,7 +182,7 @@
     for (let i = 0; i < bufferLength; i++) {
       sumSquares += data[i] * data[i];
     }
-    userVolume = Math.sqrt(sumSquares / bufferLength);
+    userVolume = Math.min(Math.sqrt(sumSquares / bufferLength), 1);
 
     // Speed estimation (zero-crossings)
     let crossings = 0;
@@ -100,28 +194,11 @@
     userSpeed = crossings / bufferLength;
   }
 
-  function playYouSaidSequence() {
-    document.getElementById("status").textContent = "▶️ Lecture : 'Tu as dit...'";
-    const youSaid = new Audio(youSaidClip);
-    youSaid.onended = () => playUserRecording();
-    youSaid.play();
-  }
-
-  function playUserRecording() {
-    document.getElementById("status").textContent = "▶️ Lecture de votre voix...";
-    const playback = new Audio(URL.createObjectURL(recordedBlob));
-    playback.onended = () => {
-      document.getElementById("status").textContent = "⏭️ Réaction inversée...";
-      const chosen = responsePath || randomFromArray(fallbackClips);
-      playInvertedMP3(chosen);
-    };
-    playback.play();
-  }
-
   function transcribeRecording() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       responsePath = randomFromArray(fallbackClips);
+      playInvertedMP3(responsePath);
       return;
     }
 
@@ -136,15 +213,18 @@
       for (const key in keywordMap) {
         if (txt.includes(key)) {
           responsePath = randomFromArray(keywordMap[key]);
+          playInvertedMP3(responsePath);
           return;
         }
       }
       responsePath = randomFromArray(fallbackClips);
+      playInvertedMP3(responsePath);
     };
 
     recognition.onerror = e => {
       document.getElementById("status").textContent = "❌ Erreur : " + e.error;
       responsePath = randomFromArray(fallbackClips);
+      playInvertedMP3(responsePath);
     };
 
     recognition.start();
@@ -159,34 +239,40 @@
         const source = audioCtx.createBufferSource();
         source.buffer = buffer;
 
-        // 🟠 Softer inversion logic:
-       const pitchFactor = 1.5 - (userPitch / 400); // closer to 1
-       const speedFactor = 1.2 - userSpeed;         // closer to 1
-       const volumeFactor = 1.5 - userVolume * 1.2; // softer change
+        // Adjusted inversion logic — believable range
+        const pitchFactor = 1.3 - (userPitch / 400); 
+        const speedFactor = 1.1 - userSpeed;        
+        const volumeFactor = 1.4 - userVolume * 1.2; 
 
-      const finalRate = Math.min(Math.max(speedFactor * pitchFactor, 0.7), 1.5);
-      source.playbackRate.value = finalRate;
+        const finalRate = Math.min(Math.max(speedFactor * pitchFactor, 0.75), 1.3);
+        source.playbackRate.value = finalRate;
 
-      const gainNode = audioCtx.createGain();
-      gainNode.gain.value = Math.min(Math.max(volumeFactor, 0.5), 2.0);
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = Math.min(Math.max(volumeFactor, 0.5), 1.5);
 
-      const filter = audioCtx.createBiquadFilter();
-      filter.type = "lowshelf";
-      filter.frequency.value = 1000;
-      filter.gain.value = pitchFactor > 1 ? -6 : 6;
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = "lowshelf";
+        filter.frequency.value = 1000;
+        filter.gain.value = pitchFactor > 1 ? -5 : 5;
 
-      source.connect(filter).connect(gainNode).connect(audioCtx.destination);
-      source.onended = () => startProcess();
-      source.start(0);
+        source.connect(filter).connect(gainNode).connect(audioCtx.destination);
+        source.onended = () => startProcess();
+        source.start(0);
 
-      document.getElementById("status").textContent =
-        `🔄 Réaction inversée (modérée) — rate: ${finalRate.toFixed(2)}, gain: ${gainNode.gain.value.toFixed(2)}`;
-    });
-}
+        document.getElementById("status").textContent =
+          `🔄 Réaction inversée — rate: ${finalRate.toFixed(2)}, gain: ${gainNode.gain.value.toFixed(2)}`;
+      })
+      .catch(err => {
+        document.getElementById("status").textContent = "⚠️ Erreur lecture MP3 : " + err;
+        startProcess();
+      });
+  }
 
   function randomFromArray(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
   }
 </script>
+
 </body>
 </html>
+
