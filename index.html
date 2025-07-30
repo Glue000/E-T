@@ -52,25 +52,32 @@
   let recordedChunks = [];
   let userPitch = 200, userSpeed = 0.05, userVolume = 0.1;
 
+  let lastRecognizedText = "";
+  let recognition = null;
+  let isRecognizing = false;
+
   document.getElementById("startBtn").onclick = () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     startProcess();
   };
 
   async function startProcess() {
     try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtx.state === 'suspended') await audioCtx.resume();
-
       recordedChunks = [];
       updateStatus("🔊 Jouer son de démarrage...");
       await playStartSound();
 
+      // Start speech recognition before recording audio
+      await startRecognition();
+
+      // Start recording audio
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      startRecognition();
-
       mediaRecorder = new MediaRecorder(stream);
+
+      recordedChunks = [];
       mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+
       mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'audio/webm' });
         analyzeAndPlay(blob);
@@ -148,29 +155,52 @@
     console.log(`Analyse: pitch=${userPitch.toFixed(1)}, volume=${userVolume.toFixed(2)}, speed=${userSpeed.toFixed(3)}`);
   }
 
-  let lastRecognizedText = "";
-
   function startRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    return new Promise((resolve) => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.warn("Reconnaissance vocale non supportée");
+        lastRecognizedText = "";
+        resolve();
+        return;
+      }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = "fr-FR";
-    recognition.interimResults = false;
-    recognition.continuous = false;
+      if (isRecognizing && recognition) {
+        recognition.abort();
+        isRecognizing = false;
+      }
 
-    recognition.onresult = e => {
-      lastRecognizedText = e.results[0][0].transcript.toLowerCase();
-      updateStatus(`✅ Vous avez dit : "${lastRecognizedText}"`);
-    };
+      recognition = new SpeechRecognition();
+      recognition.lang = "fr-FR";
+      recognition.interimResults = false;
+      recognition.continuous = false;
 
-    recognition.onerror = e => {
-      console.warn("Erreur reconnaissance:", e.error);
-      lastRecognizedText = "";
-    };
+      recognition.onresult = e => {
+        lastRecognizedText = e.results[0][0].transcript.toLowerCase();
+        updateStatus(`✅ Vous avez dit : "${lastRecognizedText}"`);
+      };
 
-    recognition.start();
-    setTimeout(() => { try { recognition.stop(); } catch {} }, RECORD_DURATION);
+      recognition.onerror = e => {
+        console.warn("Erreur reconnaissance:", e.error);
+        lastRecognizedText = "";
+      };
+
+      recognition.onend = () => {
+        isRecognizing = false;
+        resolve();
+      };
+
+      isRecognizing = true;
+      recognition.start();
+
+      // Safety timeout to stop recognition if it hangs
+      setTimeout(() => {
+        if (isRecognizing) {
+          recognition.stop();
+          isRecognizing = false;
+        }
+      }, RECORD_DURATION);
+    });
   }
 
   function chooseAndPlayMP3() {
