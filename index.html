@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
-<title>Mic + Keywords + Adaptation pitch/rythme corrigée</title>
+<title>Mic + Keywords + PlaybackRate simplifié</title>
 <style>
   body { background: #111; color: white; font-family: sans-serif; text-align:center; padding:20px; }
   button { margin: 10px; padding: 15px 30px; font-size: 18px; cursor:pointer; }
@@ -11,7 +11,7 @@
 </head>
 <body>
 
-<h1>Analyse vocale et réponse adaptative 2</h1>
+<h1>Analyse vocale et réponse adaptative</h1>
 
 <button id="btnInvert">Mode Inversion (Pitch & Rythme opposés)</button>
 <button id="btnSimilar">Mode Similarité (Pitch & Rythme similaires)</button>
@@ -22,10 +22,10 @@
 (async () => {
   const LISTEN_DURATION_MS = 3000;
   const keywords = {
-    merci: ['M/merci1.mp3', 'M/merci2.mp3', 'M/merci3.mp3'],
-    oui: ['M/a1.mp3']
+    merci: ['merci1.mp3', 'merci2.mp3', 'merci3.mp3'],
+    oui: ['oui1.mp3', 'oui2.mp3', 'oui3.mp3']
   };
-  const fallbackRecordings = ['M/a2.mp3'];
+  const fallbackRecordings = ['fallback1.mp3', 'fallback2.mp3', 'fallback3.mp3'];
 
   let lastPlayed = {merci: null, oui: null, fallback: null};
   let mode = null;
@@ -36,7 +36,6 @@
   let analyser = null;
   let dataArray = null;
 
-  // Son clic de démarrage
   function playStartSound() {
     if (!audioContext) audioContext = new AudioContext();
     const o = audioContext.createOscillator();
@@ -58,7 +57,6 @@
     return filtered[Math.floor(Math.random() * filtered.length)];
   }
 
-  // Fonction autocorrélation pitch (déjà fournie, ici simplifiée)
   function autoCorrelate(buffer, sampleRate) {
     let SIZE = buffer.length;
     let MAX_SAMPLES = Math.floor(SIZE/2);
@@ -99,7 +97,6 @@
     return -1;
   }
 
-  // Estimation simple énergie RMS pour rythme (tempo proxy)
   function estimateTempo(buffer) {
     let rms = 0;
     for(let i=0; i<buffer.length; i++) rms += buffer[i]*buffer[i];
@@ -107,57 +104,11 @@
     return rms;
   }
 
-  // Lecture audio avec filtres WebAudio pour timbre + vibrato simple
-  async function playAudio(url, basePitchRate, baseTempoRate, invert=false) {
-    if (!audioContext) audioContext = new AudioContext();
-
-    // Crée source audio
-    const audio = new Audio(url);
-    await audio.play().catch(() => {}); // précharge
-
-    // Crée node media element source pour WebAudio
-    const source = audioContext.createMediaElementSource(audio);
-
-    // Création filtre passe-bas pour timbre léger
-    const filter = audioContext.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = invert ? 800 : 1200; // filtrage différent selon mode
-
-    // Vibrato : oscillateur basse fréquence pour moduler playbackRate
-    const vibratoOsc = audioContext.createOscillator();
-    vibratoOsc.frequency.value = invert ? 6 : 3; // Hz vibrato plus rapide en inversion
-    const vibratoGain = audioContext.createGain();
-    vibratoGain.gain.value = 0.01; // intensité vibrato faible
-
-    vibratoOsc.connect(vibratoGain);
-    vibratoGain.connect(audioContext.destination); // dummy connexion (on modifie playbackRate manuellement)
-
-    vibratoOsc.start();
-
-    // Pour modifier playbackRate dynamiquement on utilise setInterval
-    let baseRate = basePitchRate * baseTempoRate;
-    baseRate = Math.min(Math.max(baseRate, 0.5), 2);
-
-    // Modulation playbackRate vibrato (sinus)
-    let startTime = audioContext.currentTime;
-    let intervalId = setInterval(() => {
-      let elapsed = audioContext.currentTime - startTime;
-      // oscillation +-0.01 autour de baseRate
-      audio.playbackRate = baseRate + 0.01 * Math.sin(2 * Math.PI * vibratoOsc.frequency.value * elapsed);
-    }, 20);
-
-    // Connect nodes: source -> filtre -> sortie
-    source.disconnect();
-    source.connect(filter);
-    filter.connect(audioContext.destination);
-
-    // Lecture et fin
+  async function playAudio(url, playbackRate) {
     return new Promise(resolve => {
-      audio.onended = () => {
-        clearInterval(intervalId);
-        vibratoOsc.stop();
-        resolve();
-      };
+      const audio = new Audio(url);
+      audio.playbackRate = playbackRate;
+      audio.onended = () => resolve();
       audio.play();
     });
   }
@@ -183,19 +134,16 @@
     playStartSound();
     statusDiv.textContent = `Écoute pendant ${LISTEN_DURATION_MS/1000} secondes...`;
 
-    // Attend durée écoute
     await new Promise(r => setTimeout(r, LISTEN_DURATION_MS));
 
     analyser.getFloatTimeDomainData(dataArray);
 
-    // Analyse pitch & tempo
     let pitch = autoCorrelate(dataArray, audioContext.sampleRate);
     if (pitch < 0) pitch = 440;
     let tempo = estimateTempo(dataArray);
 
     statusDiv.textContent = `Pitch estimé: ${pitch.toFixed(1)} Hz\nÉnergie rythmique: ${tempo.toFixed(3)}`;
 
-    // Reconnaissance vocale (simple)
     let recognizedWord = null;
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       let SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -223,7 +171,6 @@
       });
     }
 
-    // Choix de la piste
     let chosenUrl;
     if (recognizedWord && keywords[recognizedWord]) {
       chosenUrl = pickRandom(keywords[recognizedWord], lastPlayed[recognizedWord]);
@@ -233,35 +180,24 @@
       lastPlayed.fallback = chosenUrl;
     }
 
-    // Calcul des facteurs de modulation :
-
-    // Base pitch rate (normalisé sur 440Hz)
     let basePitchRate = Math.min(Math.max(pitch / 440, 0.5), 2);
-    // Base tempo rate (énergie multipliée par un facteur arbitraire)
     let baseTempoRate = Math.min(Math.max(tempo * 10, 0.5), 2);
 
-    // Application des réductions demandées :
-    // Speed (playbackRate) : réduire effet à 3/4
-    // Pitch et tempo : réduire effet à 1/2 (50%)
-    // Donc on calcule modulation pitch/tempo partiellement, speed aussi partiellement
+    // Appliquer la modulation réduite
+    // vitesse réduit à 75% effet
+    // pitch et tempo moitié effet
 
-    // Calcul effectifs pour inversion ou similarité
-    let pitchFactor = 1 + (mode === 'invert' ? -(basePitchRate - 1) : (basePitchRate -1)) * 0.5; // moitié modulation
-    let tempoFactor = 1 + (mode === 'invert' ? -(baseTempoRate - 1) : (baseTempoRate -1)) * 0.5; // moitié modulation
-
-    // speed = effet global = 3/4 modulation totale
+    let pitchFactor = 1 + (mode === 'invert' ? -(basePitchRate - 1) : (basePitchRate -1)) * 0.5;
+    let tempoFactor = 1 + (mode === 'invert' ? -(baseTempoRate - 1) : (baseTempoRate -1)) * 0.5;
     let speedFactor = 1 + (mode === 'invert' ? -(basePitchRate * baseTempoRate - 1) : (basePitchRate * baseTempoRate -1)) * 0.75;
 
-    // Combine speedFactor avec pitchFactor et tempoFactor pour playbackRate
-    // Pour éviter conflit, on fait playbackRate = moyenne pondérée des facteurs (exemple simple)
+    // Moyenne simple
     let playbackRate = (speedFactor + pitchFactor + tempoFactor) / 3;
-
-    // Clamp playbackRate entre 0.5 et 2
     playbackRate = Math.min(Math.max(playbackRate, 0.5), 2);
 
     statusDiv.textContent += `\nLecture : ${chosenUrl}\nPlaybackRate calculé : ${playbackRate.toFixed(3)}\nMode : ${mode}`;
 
-    await playAudio(chosenUrl, playbackRate, 1, mode === 'invert');
+    await playAudio(chosenUrl, playbackRate);
 
     if (mode !== null) process();
   }
