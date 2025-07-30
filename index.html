@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>Inverse Voice Reaction with Keywords & Start Sound</title>
+  <title>Soft Opposition Voice Reaction</title>
   <style>
     body {
       background: black;
@@ -21,8 +21,8 @@
 </head>
 <body>
 
-<h1>🎤 Inverse Voice Reaction + Keywords0.1</h1>
-<button onclick="startProcess()">🎧 Démarrer</button>
+<h1>🎤 Soft Opposition Voice Reaction</h1>
+<button id="startBtn">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 
 <script>
@@ -31,12 +31,20 @@
     "oui": ["M/a3.mp3"]
   };
   const fallbackClips = ["M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3"];
-  const recordStartSound = "click.mp3"; // your start sound mp3 here
-  const RECORD_DURATION = 3000;
+  const recordStartSound = "click.mp3"; // replace with your start sound path
+  const RECORD_DURATION = 3000; // milliseconds
 
-  let mediaRecorder, audioCtx, analyser;
+  let audioCtx = null;
+  let mediaRecorder = null;
   let recordedChunks = [];
+
+  // Pitch, volume, speed global for playback adjustments
   let userPitch = 200, userVolume = 0.1, userSpeed = 0.05;
+
+  // Start button event
+  document.getElementById("startBtn").onclick = () => {
+    startProcess();
+  };
 
   async function startProcess() {
     try {
@@ -45,141 +53,154 @@
       }
       if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
-        console.log("AudioContext resumed");
       }
 
       recordedChunks = [];
-
+      updateStatus("🔊 Jouer son de démarrage...");
       await playStartSound();
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Start speech recognition at the same time as recording
+      startRecognition();
+
       mediaRecorder = new MediaRecorder(stream);
-
-      const micSource = audioCtx.createMediaStreamSource(stream);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
-      micSource.connect(analyser);
-
       mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-
       mediaRecorder.onstop = () => {
         const recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
-        analyzeMicInput();
-        transcribeRecording();
+        analyzeAndPlay(recordedBlob);
       };
 
       mediaRecorder.start();
-      document.getElementById("status").textContent = "🎙️ Enregistrement...";
-      setTimeout(() => mediaRecorder.stop(), RECORD_DURATION);
+      updateStatus("🎙️ Enregistrement...");
+      setTimeout(() => {
+        mediaRecorder.stop();
+      }, RECORD_DURATION);
 
     } catch (err) {
-      console.error("Error in startProcess:", err);
-      document.getElementById("status").textContent = "❌ Erreur : " + err.message;
+      console.error(err);
+      updateStatus("❌ Erreur : " + err.message);
     }
   }
 
+  function updateStatus(text) {
+    document.getElementById("status").textContent = text;
+  }
+
   function playStartSound() {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const sound = new Audio(recordStartSound);
       sound.volume = 0.5;
       sound.onended = resolve;
-      sound.onerror = e => {
-        console.warn("Start sound error", e);
-        resolve(); // resolve anyway to not block
-      };
-      sound.play().catch(e => {
-        console.warn("Play start sound failed", e);
-        resolve();
-      });
+      sound.onerror = () => resolve(); // ignore errors, resolve anyway
+      sound.play().catch(() => resolve());
     });
   }
 
-  function analyzeMicInput() {
-    const bufferLength = analyser.fftSize;
-    const data = new Float32Array(bufferLength);
-    analyser.getFloatTimeDomainData(data);
+  function analyzeAndPlay(blob) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      audioCtx.decodeAudioData(e.target.result).then(buffer => {
+        analyzeRecordedAudio(buffer);
+        // Play the inverted mp3 based on last recognized keyword or fallback
+        chooseAndPlayMP3();
+      }).catch(err => {
+        console.error("Audio decode error:", err);
+        updateStatus("⚠️ Erreur décodage audio");
+        restartProcessWithDelay();
+      });
+    };
+    reader.readAsArrayBuffer(blob);
+  }
 
-    // Pitch estimation via autocorrelation
+  // Analyze PCM data for pitch, volume, speed
+  function analyzeRecordedAudio(buffer) {
+    const rawData = buffer.getChannelData(0);
+    const sampleRate = buffer.sampleRate;
+
+    // Pitch (autocorrelation)
     let maxCorr = 0, bestLag = 0;
     for (let lag = 16; lag < 1000; lag++) {
       let corr = 0;
-      for (let i = 0; i < bufferLength - lag; i++) {
-        corr += data[i] * data[i + lag];
+      for (let i = 0; i < rawData.length - lag; i++) {
+        corr += rawData[i] * rawData[i + lag];
       }
       if (corr > maxCorr) {
         maxCorr = corr;
         bestLag = lag;
       }
     }
-    userPitch = bestLag > 0 ? (audioCtx.sampleRate / bestLag) : 200;
+    userPitch = bestLag > 0 ? (sampleRate / bestLag) : 200;
 
-    // Volume estimation (RMS)
+    // Volume RMS
     let sumSquares = 0;
-    for (let i = 0; i < bufferLength; i++) {
-      sumSquares += data[i] * data[i];
+    for (let i = 0; i < rawData.length; i++) {
+      sumSquares += rawData[i] * rawData[i];
     }
-    userVolume = Math.min(Math.sqrt(sumSquares / bufferLength), 1);
+    userVolume = Math.min(Math.sqrt(sumSquares / rawData.length), 1);
 
-    // Speed estimation (zero-crossings)
+    // Speed (zero crossings)
     let crossings = 0;
-    for (let i = 1; i < bufferLength; i++) {
-      if ((data[i - 1] < 0 && data[i] >= 0) || (data[i - 1] > 0 && data[i] <= 0)) {
+    for (let i = 1; i < rawData.length; i++) {
+      if ((rawData[i - 1] < 0 && rawData[i] >= 0) || (rawData[i - 1] > 0 && rawData[i] <= 0)) {
         crossings++;
       }
     }
-    userSpeed = crossings / bufferLength;
+    userSpeed = crossings / rawData.length;
 
-    console.log(`analyzeMicInput: pitch=${userPitch.toFixed(1)}, volume=${userVolume.toFixed(2)}, speed=${userSpeed.toFixed(3)}`);
+    console.log(`Analyse: pitch=${userPitch.toFixed(1)}, volume=${userVolume.toFixed(2)}, speed=${userSpeed.toFixed(3)}`);
   }
 
-  function transcribeRecording() {
+  // Store recognized text globally for use in choosing mp3
+  let lastRecognizedText = "";
+
+  // Speech recognition function
+  function startRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      console.warn("SpeechRecognition API not supported");
-      playRandomFallback();
+      console.warn("SpeechRecognition API non supporté");
+      lastRecognizedText = "";
       return;
     }
-
     const recognition = new SpeechRecognition();
     recognition.lang = "fr-FR";
     recognition.interimResults = false;
     recognition.continuous = false;
 
     recognition.onresult = e => {
-      const txt = e.results[0][0].transcript.toLowerCase();
-      document.getElementById("status").textContent = `✅ Vous avez dit : "${txt}"`;
-      console.log("Recognized text:", txt);
-      for (const key in keywordMap) {
-        if (txt.includes(key)) {
-          const responsePath = randomFromArray(keywordMap[key]);
-          playInvertedMP3(responsePath);
-          return;
-        }
-      }
-      playRandomFallback();
+      lastRecognizedText = e.results[0][0].transcript.toLowerCase();
+      updateStatus(`✅ Vous avez dit : "${lastRecognizedText}"`);
+      console.log("Reconnu:", lastRecognizedText);
     };
 
     recognition.onerror = e => {
-      console.error("Speech recognition error:", e.error);
-      document.getElementById("status").textContent = "❌ Erreur reconnaissance : " + e.error;
-      playRandomFallback();
+      console.warn("Erreur reconnaissance:", e.error);
+      lastRecognizedText = "";
     };
 
     recognition.start();
-    // Safety stop after 3 sec
+    // Safety stop after record duration
     setTimeout(() => {
-      try {
-        recognition.stop();
-      } catch {}
-    }, 3000);
+      try { recognition.stop(); } catch {}
+    }, RECORD_DURATION);
   }
 
-  function playRandomFallback() {
-    const responsePath = randomFromArray(fallbackClips);
-    playInvertedMP3(responsePath);
+  // Pick mp3 to play based on keyword or fallback
+  function chooseAndPlayMP3() {
+    let foundKey = null;
+    for (const key in keywordMap) {
+      if (lastRecognizedText.includes(key)) {
+        foundKey = key;
+        break;
+      }
+    }
+    let clipList = foundKey ? keywordMap[foundKey] : fallbackClips;
+    const chosenPath = randomFromArray(clipList);
+    playSoftOppositionMP3(chosenPath);
   }
 
-  function playInvertedMP3(path) {
+  // Play mp3 with gentle opposite pitch, speed, volume
+  function playSoftOppositionMP3(path) {
     fetch(path)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -190,36 +211,38 @@
         const source = audioCtx.createBufferSource();
         source.buffer = buffer;
 
-        const pitchFactor = 1.3 - (userPitch / 400);
-        const speedFactor = 1.1 - userSpeed;
-        const volumeFactor = 1.4 - userVolume * 1.2;
+        // Soft opposite factors (values close to 1)
+        const pitchFactor = 1.1 - (userPitch / 800); // gentle inverse pitch
+        const speedFactor = 1.05 - userSpeed * 0.5; // gentle inverse speed
+        const volumeFactor = 1.0 - userVolume * 0.3; // softer volume when user loud
 
-        const finalRate = Math.min(Math.max(speedFactor * pitchFactor, 0.75), 1.3);
+        // Clamp final playback rate and gain
+        const finalRate = Math.min(Math.max(speedFactor * pitchFactor, 0.85), 1.15);
         source.playbackRate.value = finalRate;
 
         const gainNode = audioCtx.createGain();
-        gainNode.gain.value = Math.min(Math.max(volumeFactor, 0.5), 1.5);
+        gainNode.gain.value = Math.min(Math.max(volumeFactor, 0.4), 1.0);
 
+        // Mild filter for tonal opposition
         const filter = audioCtx.createBiquadFilter();
         filter.type = "lowshelf";
-        filter.frequency.value = 1000;
-        filter.gain.value = pitchFactor > 1 ? -5 : 5;
+        filter.frequency.value = 800;
+        filter.gain.value = pitchFactor > 1 ? -3 : 3;
 
         source.connect(filter).connect(gainNode).connect(audioCtx.destination);
 
         source.onended = () => {
-          console.log("Playback ended, restarting process");
-          startProcess();
+          updateStatus("🔄 Lecture terminée, redémarrage...");
+          setTimeout(() => startProcess(), 500); // small delay before restart
         };
 
         source.start();
-        document.getElementById("status").textContent =
-          `🔄 Réaction inversée — rate: ${finalRate.toFixed(2)}, gain: ${gainNode.gain.value.toFixed(2)}`;
+        updateStatus(`▶️ Lecture mp3 inversée douce — rate: ${finalRate.toFixed(2)}, gain: ${gainNode.gain.value.toFixed(2)}`);
       })
       .catch(err => {
-        console.error("Error playing mp3:", err);
-        document.getElementById("status").textContent = "⚠️ Erreur lecture MP3 : " + err.message;
-        startProcess();
+        console.error("Erreur lecture mp3:", err);
+        updateStatus("⚠️ Erreur lecture MP3 : " + err.message);
+        setTimeout(() => startProcess(), 1000);
       });
   }
 
