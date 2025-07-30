@@ -21,7 +21,7 @@
 </head>
 <body>
 
-<h1>🎤 Mic Keyword Response 0.3</h1>
+<h1>🎤 Mic Keyword Response 0.4</h1>
 <button onclick="startProcess()">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 
@@ -32,6 +32,7 @@
   };
   const fallbackClips = ["M/merci1.mp3"];
   const youSaidClip = "positifR1.mp3";
+  const RECORD_DURATION = 3000; // <-- change this to adjust recording time
 
   let mediaRecorder;
   let recordedChunks = [];
@@ -47,8 +48,8 @@
         playYouSaidSequence();
       };
       mediaRecorder.start();
-      document.getElementById("status").textContent = "🎙️ Enregistrement 3s...";
-      setTimeout(() => mediaRecorder.stop(), 3000);
+      document.getElementById("status").textContent = "🎙️ Enregistrement...";
+      setTimeout(() => mediaRecorder.stop(), RECORD_DURATION);
     });
   }
 
@@ -72,7 +73,7 @@
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       document.getElementById("status").textContent = "❌ Reconnaissance non supportée.";
-      playRandom(fallbackClips);
+      playResponse(fallbackClips);
       return;
     }
 
@@ -84,41 +85,33 @@
     recognition.onresult = e => {
       const txt = e.results[0][0].transcript.toLowerCase();
       document.getElementById("status").textContent = `✅ Vous avez dit : "${txt}"`;
-      let found = false;
       for (const key in keywordMap) {
         if (txt.includes(key)) {
-          found = true;
-          playRandom(keywordMap[key]);
+          playResponse(keywordMap[key]);
           return;
         }
       }
-      if (!found) {
-        playRandom(fallbackClips);
-      }
+      playResponse(fallbackClips);
     };
 
     recognition.onerror = e => {
       document.getElementById("status").textContent = "❌ Erreur : " + e.error;
-      playRandom(fallbackClips);
+      playResponse(fallbackClips);
     };
 
-    recognition.onend = () => {
-      // ne rien faire ici, le MP3 est déclenché dans onresult/onerror
-    };
-
-    // 👉 On "feinte" la reconnaissance en lisant le micro EN MÊME TEMPS que l’enregistrement
     recognition.start();
     setTimeout(() => recognition.stop(), 3000);
   }
 
-  function playRandom(list) {
+  function playResponse(list) {
     const path = list[Math.floor(Math.random() * list.length)];
     document.getElementById("status").textContent = "▶️ Réponse : " + path;
-    const audio = new Audio(path);
-    audio.onended = () => startProcess(); // boucle
-    audio.play();
+    const response = new Audio(path);
+    response.onended = () => startProcess(); // restart after response
+    response.play();
   }
 </script>
 
 </body>
 </html>
+
