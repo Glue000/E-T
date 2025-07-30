@@ -31,7 +31,7 @@
 </head>
 <body>
 
-<h1>🎤 Soft Opposition Voice Reaction3</h1>
+<h1>🎤 Soft Opposition Voice Reaction4</h1>
 <button id="startBtn">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 <div id="log"></div>
@@ -210,7 +210,7 @@
 
         const volumeFactor = 1.0 - userVolume * 0.05;
         const gainNode = audioCtx.createGain();
-        gainNode.gain.value = 1.0;
+        gainNode.gain.value = volumeFactor;
 
         const panner = new StereoPannerNode(audioCtx, {
           pan: (Math.random() - 0.5) * 2
@@ -229,7 +229,8 @@
         };
 
         source.start();
-        updateStatus(`▶️ Lecture opposition — rate: ${finalRate.toFixed(2)}, gain: ${gainNode.gain.value.toFixed(2)}`);
+        updateStatus(`▶️ Lecture opposition — rate: ${finalRate.toFixed(2)}, gain: ${volumeFactor.toFixed(2)}`);
+        console.log(`Lecture: pitch=${userPitch.toFixed(1)}, volume=${userVolume.toFixed(2)}, speed=${userSpeed.toFixed(3)}, rate=${finalRate.toFixed(2)}, gain=${volumeFactor.toFixed(2)}`);
       })
       .catch(err => {
         console.error("Erreur lecture mp3:", err);
@@ -253,4 +254,3 @@
 
 </body>
 </html>
-
