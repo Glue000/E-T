@@ -2,11 +2,11 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
-<title>Mic + Keywords + Adaptation pitch/rythme</title>
+<title>Mic + Keywords + Adaptation pitch/rythme corrigée</title>
 <style>
   body { background: #111; color: white; font-family: sans-serif; text-align:center; padding:20px; }
   button { margin: 10px; padding: 15px 30px; font-size: 18px; cursor:pointer; }
-  #status { margin-top: 20px; font-weight: bold; }
+  #status { margin-top: 20px; font-weight: bold; white-space: pre-line; }
 </style>
 </head>
 <body>
@@ -20,28 +20,37 @@
 
 <script>
 (async () => {
-  // ----- CONFIG -----
-  const LISTEN_DURATION_MS = 3000; // temps d'écoute, modifiable facilement
+  const LISTEN_DURATION_MS = 3000;
   const keywords = {
-    merci: ['M/merci1.mp3', 'M/merci2.mp3'],
-    oui: ['positifR1.mp3']
+    merci: ['merci1.mp3', 'merci2.mp3', 'merci3.mp3'],
+    oui: ['oui1.mp3', 'oui2.mp3', 'oui3.mp3']
   };
-  const fallbackRecordings = ['M/merci13.mp3'];
+  const fallbackRecordings = ['fallback1.mp3', 'fallback2.mp3', 'fallback3.mp3'];
 
-  // Pour éviter répétitions simples
   let lastPlayed = {merci: null, oui: null, fallback: null};
-
-  // Etat mode : 'invert' ou 'similar'
   let mode = null;
 
-  // Accès audio
   let audioContext = null;
   let mediaStream = null;
   let mediaStreamSource = null;
   let analyser = null;
   let dataArray = null;
 
-  // Utilitaires
+  // Son clic de démarrage
+  function playStartSound() {
+    if (!audioContext) audioContext = new AudioContext();
+    const o = audioContext.createOscillator();
+    const g = audioContext.createGain();
+    o.frequency.value = 1000;
+    o.type = 'square';
+    o.connect(g);
+    g.connect(audioContext.destination);
+    g.gain.setValueAtTime(0.2, audioContext.currentTime);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+    o.stop(audioContext.currentTime + 0.1);
+  }
+
   function pickRandom(arr, last) {
     if (arr.length === 1) return arr[0];
     let filtered = arr.filter(x => x !== last);
@@ -49,9 +58,8 @@
     return filtered[Math.floor(Math.random() * filtered.length)];
   }
 
-  // Analyse pitch (autocorrelation basique)
+  // Fonction autocorrélation pitch (déjà fournie, ici simplifiée)
   function autoCorrelate(buffer, sampleRate) {
-    // Source: https://github.com/cwilso/PitchDetect/blob/master/js/pitchdetect.js
     let SIZE = buffer.length;
     let MAX_SAMPLES = Math.floor(SIZE/2);
     let bestOffset = -1;
@@ -65,7 +73,7 @@
       rms += val*val;
     }
     rms = Math.sqrt(rms/SIZE);
-    if (rms<0.01) return -1; // trop faible
+    if (rms<0.01) return -1;
 
     let lastCorrelation=1;
     for (let offset = 0; offset < MAX_SAMPLES; offset++) {
@@ -74,7 +82,7 @@
         correlation += Math.abs((buffer[i]) - (buffer[i+offset]));
       }
       correlation = 1 - (correlation/MAX_SAMPLES);
-      correlations[offset] = correlation; 
+      correlations[offset] = correlation;
       if ((correlation > 0.9) && (correlation > lastCorrelation)) {
         foundGoodCorrelation = true;
         if (correlation > bestCorrelation) {
@@ -82,47 +90,78 @@
           bestOffset = offset;
         }
       } else if (foundGoodCorrelation) {
-        // found a good correlation & now decreasing
-        let shift = (correlations[bestOffset+1] - correlations[bestOffset-1])/correlations[bestOffset];  
+        let shift = (correlations[bestOffset+1] - correlations[bestOffset-1]) / correlations[bestOffset];
         return sampleRate/(bestOffset + 8*shift);
       }
       lastCorrelation = correlation;
     }
-    if (bestCorrelation > 0.01) {
-      return sampleRate/bestOffset;
-    }
+    if (bestCorrelation > 0.01) return sampleRate/bestOffset;
     return -1;
   }
 
-  // Analyse rythme simplifiée (détection du tempo via énergie RMS) - approximation
-  function estimateTempo(buffer, sampleRate) {
-    // On calcule l'énergie RMS sur petits segments et on cherche des pics rythmiques
-    // Ici on fera un truc simple: calcul RMS global (plus bas = plus lent)
+  // Estimation simple énergie RMS pour rythme (tempo proxy)
+  function estimateTempo(buffer) {
     let rms = 0;
-    for (let i=0; i<buffer.length; i++) rms += buffer[i]*buffer[i];
+    for(let i=0; i<buffer.length; i++) rms += buffer[i]*buffer[i];
     rms = Math.sqrt(rms / buffer.length);
-    return rms; // Plus élevé = plus énergique (potentiellement plus rapide)
+    return rms;
   }
 
-  // Jouer un mp3 avec pitch/rythme modifié (basique via playbackRate)
-  function playAudio(url, pitch, tempo) {
-    return new Promise(resolve => {
-      const audio = new Audio(url);
-      // Ajustement playbackRate pour tenter d'adapter pitch & rythme
-      // pitch ~ playbackRate
-      // tempo ~ playbackRate aussi (simplification)
-      // On combine selon mode
-      // playbackRate = tempo * pitch approx (dans [0.5 - 2])
-      let rate = pitch * tempo;
-      rate = Math.min(Math.max(rate, 0.5), 2);
-      audio.playbackRate = rate;
+  // Lecture audio avec filtres WebAudio pour timbre + vibrato simple
+  async function playAudio(url, basePitchRate, baseTempoRate, invert=false) {
+    if (!audioContext) audioContext = new AudioContext();
 
-      audio.onended = () => resolve();
+    // Crée source audio
+    const audio = new Audio(url);
+    await audio.play().catch(() => {}); // précharge
+
+    // Crée node media element source pour WebAudio
+    const source = audioContext.createMediaElementSource(audio);
+
+    // Création filtre passe-bas pour timbre léger
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = invert ? 800 : 1200; // filtrage différent selon mode
+
+    // Vibrato : oscillateur basse fréquence pour moduler playbackRate
+    const vibratoOsc = audioContext.createOscillator();
+    vibratoOsc.frequency.value = invert ? 6 : 3; // Hz vibrato plus rapide en inversion
+    const vibratoGain = audioContext.createGain();
+    vibratoGain.gain.value = 0.01; // intensité vibrato faible
+
+    vibratoOsc.connect(vibratoGain);
+    vibratoGain.connect(audioContext.destination); // dummy connexion (on modifie playbackRate manuellement)
+
+    vibratoOsc.start();
+
+    // Pour modifier playbackRate dynamiquement on utilise setInterval
+    let baseRate = basePitchRate * baseTempoRate;
+    baseRate = Math.min(Math.max(baseRate, 0.5), 2);
+
+    // Modulation playbackRate vibrato (sinus)
+    let startTime = audioContext.currentTime;
+    let intervalId = setInterval(() => {
+      let elapsed = audioContext.currentTime - startTime;
+      // oscillation +-0.01 autour de baseRate
+      audio.playbackRate = baseRate + 0.01 * Math.sin(2 * Math.PI * vibratoOsc.frequency.value * elapsed);
+    }, 20);
+
+    // Connect nodes: source -> filtre -> sortie
+    source.disconnect();
+    source.connect(filter);
+    filter.connect(audioContext.destination);
+
+    // Lecture et fin
+    return new Promise(resolve => {
+      audio.onended = () => {
+        clearInterval(intervalId);
+        vibratoOsc.stop();
+        resolve();
+      };
       audio.play();
     });
   }
 
-  // Process complet
   async function process() {
     if (!mediaStream) {
       try {
@@ -141,27 +180,22 @@
       dataArray = new Float32Array(analyser.fftSize);
     }
 
-    statusDiv.textContent = `Ecoute pendant ${LISTEN_DURATION_MS/1000} secondes...`;
-    let chunks = [];
-    let sampleRate = audioContext.sampleRate;
+    playStartSound();
+    statusDiv.textContent = `Écoute pendant ${LISTEN_DURATION_MS/1000} secondes...`;
 
-    // Collect audio data
-    analyser.getFloatTimeDomainData(dataArray);
-
-    // On attend la durée
+    // Attend durée écoute
     await new Promise(r => setTimeout(r, LISTEN_DURATION_MS));
 
     analyser.getFloatTimeDomainData(dataArray);
 
     // Analyse pitch & tempo
-    let pitch = autoCorrelate(dataArray, sampleRate);
-    if (pitch < 0) pitch = 440; // défaut A4 si non détecté
-    let tempoEnergy = estimateTempo(dataArray, sampleRate);
+    let pitch = autoCorrelate(dataArray, audioContext.sampleRate);
+    if (pitch < 0) pitch = 440;
+    let tempo = estimateTempo(dataArray);
 
-    statusDiv.textContent = `Pitch estimé: ${pitch.toFixed(1)} Hz, énergie rythmique: ${tempoEnergy.toFixed(3)}`;
+    statusDiv.textContent = `Pitch estimé: ${pitch.toFixed(1)} Hz\nÉnergie rythmique: ${tempo.toFixed(3)}`;
 
-    // Reconnaissance keywords simple: On peut juste simuler via reconnaissance vocale
-    // Ici, on utilise SpeechRecognition si disponible
+    // Reconnaissance vocale (simple)
     let recognizedWord = null;
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       let SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -174,7 +208,6 @@
       recognizedWord = await new Promise(res => {
         recog.onresult = (event) => {
           let transcript = event.results[0][0].transcript.toLowerCase();
-          // Vérifie si un keyword est présent dans le texte
           for (const kw of Object.keys(keywords)) {
             if (transcript.includes(kw)) {
               res(kw);
@@ -190,7 +223,7 @@
       });
     }
 
-    // Choix de la piste à jouer
+    // Choix de la piste
     let chosenUrl;
     if (recognizedWord && keywords[recognizedWord]) {
       chosenUrl = pickRandom(keywords[recognizedWord], lastPlayed[recognizedWord]);
@@ -200,45 +233,53 @@
       lastPlayed.fallback = chosenUrl;
     }
 
-    // Calcule pitch et tempo de base pour inverser ou similaire
-    // Pour inversion on prend pitch inverse (A4=440 => 1/440 normalisé), tempo inverse
-    // Simplification : 
-    // Normalisation pitch entre 0.5 et 2 pour playbackRate
-    let basePitchRate = Math.min(Math.max(pitch/440, 0.5), 2);
-    let baseTempoRate = Math.min(Math.max(tempoEnergy*10, 0.5), 2); // facteur arbitraire
+    // Calcul des facteurs de modulation :
 
-    let pitchRate, tempoRate;
-    if (mode === 'invert') {
-      pitchRate = 1 / basePitchRate;
-      tempoRate = 1 / baseTempoRate;
-    } else {
-      pitchRate = basePitchRate;
-      tempoRate = baseTempoRate;
-    }
+    // Base pitch rate (normalisé sur 440Hz)
+    let basePitchRate = Math.min(Math.max(pitch / 440, 0.5), 2);
+    // Base tempo rate (énergie multipliée par un facteur arbitraire)
+    let baseTempoRate = Math.min(Math.max(tempo * 10, 0.5), 2);
 
-    statusDiv.textContent += `\nLecture : ${chosenUrl} (pitchRate: ${pitchRate.toFixed(2)}, tempoRate: ${tempoRate.toFixed(2)})`;
+    // Application des réductions demandées :
+    // Speed (playbackRate) : réduire effet à 3/4
+    // Pitch et tempo : réduire effet à 1/2 (50%)
+    // Donc on calcule modulation pitch/tempo partiellement, speed aussi partiellement
 
-    await playAudio(chosenUrl, pitchRate, tempoRate);
+    // Calcul effectifs pour inversion ou similarité
+    let pitchFactor = 1 + (mode === 'invert' ? -(basePitchRate - 1) : (basePitchRate -1)) * 0.5; // moitié modulation
+    let tempoFactor = 1 + (mode === 'invert' ? -(baseTempoRate - 1) : (baseTempoRate -1)) * 0.5; // moitié modulation
 
-    // Recommencer en boucle si mode activé
+    // speed = effet global = 3/4 modulation totale
+    let speedFactor = 1 + (mode === 'invert' ? -(basePitchRate * baseTempoRate - 1) : (basePitchRate * baseTempoRate -1)) * 0.75;
+
+    // Combine speedFactor avec pitchFactor et tempoFactor pour playbackRate
+    // Pour éviter conflit, on fait playbackRate = moyenne pondérée des facteurs (exemple simple)
+    let playbackRate = (speedFactor + pitchFactor + tempoFactor) / 3;
+
+    // Clamp playbackRate entre 0.5 et 2
+    playbackRate = Math.min(Math.max(playbackRate, 0.5), 2);
+
+    statusDiv.textContent += `\nLecture : ${chosenUrl}\nPlaybackRate calculé : ${playbackRate.toFixed(3)}\nMode : ${mode}`;
+
+    await playAudio(chosenUrl, playbackRate, 1, mode === 'invert');
+
     if (mode !== null) process();
   }
 
-  // Gestion boutons
   const btnInvert = document.getElementById('btnInvert');
   const btnSimilar = document.getElementById('btnSimilar');
   const statusDiv = document.getElementById('status');
 
   btnInvert.onclick = () => {
-    if (mode === 'invert') return; // déjà en mode invert
+    if (mode === 'invert') return;
     mode = 'invert';
     statusDiv.textContent = "Mode INVERSION activé, démarrage...";
     process();
   };
   btnSimilar.onclick = () => {
-    if (mode === 'similar') return; // déjà en mode similar
+    if (mode === 'similar') return;
     mode = 'similar';
-    statusDiv.textContent = "Mode SIMILARITE activé, démarrage...";
+    statusDiv.textContent = "Mode SIMILARITÉ activé, démarrage...";
     process();
   };
 })();
