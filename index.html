@@ -28,11 +28,11 @@
 <script>
   const keywordMap = {
     "ok": ["M/a2.mp3", "M/ok2.mp3", "M/ok3.mp3"],
-    "oui": ["M/a3.mp3", "M/oui2.mp3", "M/oui3.mp3"]
+    "oui": ["M/a3.mp3",]
   };
   const fallbackClips = ["M/merci1.mp3", "M/merci2.mp3", "M/merci3.mp3"];
-  const recordStartSound = "start-sound.mp3";       // sound when recording starts
-  const speakingSound = "speaking-sound.mp3";       // looping speaking sound during recording
+  const recordStartSound = "click.mp3";       // sound when recording starts
+  const speakingSound = "M/1P V.mp3";       // looping speaking sound during recording
   const RECORD_DURATION = 3000;
 
   let mediaRecorder, audioCtx, analyser;
