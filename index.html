@@ -1,226 +1,125 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8" />
-<title>Mic + Keywords + PlaybackRate simplifié</title>
-<style>
-  body { background: #111; color: white; font-family: sans-serif; text-align:center; padding:20px; }
-  button { margin: 10px; padding: 15px 30px; font-size: 18px; cursor:pointer; }
-  #status { margin-top: 20px; font-weight: bold; white-space: pre-line; }
-</style>
+  <meta charset="UTF-8" />
+  <title>Mic Keyword Response</title>
+  <style>
+    body {
+      background: black;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    button {
+      font-size: 18px;
+      margin: 10px;
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body>
 
-<h1>Analyse vocale et réponse adaptative</h1>
-
-<button id="btnInvert">Mode Inversion (Pitch & Rythme opposés)</button>
-<button id="btnSimilar">Mode Similarité (Pitch & Rythme similaires)</button>
-
-<div id="status">Appuyez sur un bouton pour démarrer</div>
-
+<h1>🎤 Mic Keyword Response 0.7</h1>
+<button onclick="startProcess()">🎧 Démarrer</button>
+<div id="status">Prêt.</div>
 <script>
-(async () => {
-  const LISTEN_DURATION_MS = 3000;
-  const keywords = {
-    merci: ['M/merci3.mp3'],
-    oui: ['M/merci2.mp3']
+  const keywordMap = {
+    "ok": ["reaction 2.mp3"],
+    "oui": ["reaction 2.mp3"]
   };
-  const fallbackRecordings = ['M/merci1.mp3'];
+  const fallbackClips = ["reaction 1.mp3"];
+  const youSaidClip = "reaction1 1.mp3";
+  const RECORD_DURATION = 3000;
 
-  let lastPlayed = {merci: null, oui: null, fallback: null};
-  let mode = null;
+  let mediaRecorder;
+  let recordedChunks = [];
+  let recordedBlob;
+  let responsePath = null;
 
-  let audioContext = null;
-  let mediaStream = null;
-  let mediaStreamSource = null;
-  let analyser = null;
-  let dataArray = null;
-
-  function playStartSound() {
-    if (!audioContext) audioContext = new AudioContext();
-    const o = audioContext.createOscillator();
-    const g = audioContext.createGain();
-    o.frequency.value = 1000;
-    o.type = 'square';
-    o.connect(g);
-    g.connect(audioContext.destination);
-    g.gain.setValueAtTime(0.2, audioContext.currentTime);
-    o.start();
-    g.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
-    o.stop(audioContext.currentTime + 0.1);
-  }
-
-  function pickRandom(arr, last) {
-    if (arr.length === 1) return arr[0];
-    let filtered = arr.filter(x => x !== last);
-    if (filtered.length === 0) filtered = arr;
-    return filtered[Math.floor(Math.random() * filtered.length)];
-  }
-
-  function autoCorrelate(buffer, sampleRate) {
-    let SIZE = buffer.length;
-    let MAX_SAMPLES = Math.floor(SIZE/2);
-    let bestOffset = -1;
-    let bestCorrelation = 0;
-    let rms = 0;
-    let foundGoodCorrelation = false;
-    let correlations = new Array(MAX_SAMPLES);
-
-    for (let i=0; i<SIZE; i++) {
-      let val = buffer[i];
-      rms += val*val;
-    }
-    rms = Math.sqrt(rms/SIZE);
-    if (rms<0.01) return -1;
-
-    let lastCorrelation=1;
-    for (let offset = 0; offset < MAX_SAMPLES; offset++) {
-      let correlation = 0;
-      for (let i=0; i<MAX_SAMPLES; i++) {
-        correlation += Math.abs((buffer[i]) - (buffer[i+offset]));
-      }
-      correlation = 1 - (correlation/MAX_SAMPLES);
-      correlations[offset] = correlation;
-      if ((correlation > 0.9) && (correlation > lastCorrelation)) {
-        foundGoodCorrelation = true;
-        if (correlation > bestCorrelation) {
-          bestCorrelation = correlation;
-          bestOffset = offset;
-        }
-      } else if (foundGoodCorrelation) {
-        let shift = (correlations[bestOffset+1] - correlations[bestOffset-1]) / correlations[bestOffset];
-        return sampleRate/(bestOffset + 8*shift);
-      }
-      lastCorrelation = correlation;
-    }
-    if (bestCorrelation > 0.01) return sampleRate/bestOffset;
-    return -1;
-  }
-
-  function estimateTempo(buffer) {
-    let rms = 0;
-    for(let i=0; i<buffer.length; i++) rms += buffer[i]*buffer[i];
-    rms = Math.sqrt(rms / buffer.length);
-    return rms;
-  }
-
-  async function playAudio(url, playbackRate) {
-    return new Promise(resolve => {
-      const audio = new Audio(url);
-      audio.playbackRate = playbackRate;
-      audio.onended = () => resolve();
-      audio.play();
+  function startProcess() {
+    recordedChunks = [];
+    responsePath = null;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+        transcribeRecording();
+        playYouSaidSequence();
+      };
+      mediaRecorder.start();
+      document.getElementById("status").textContent = "🎙️ Enregistrement...";
+      setTimeout(() => mediaRecorder.stop(), RECORD_DURATION);
     });
   }
 
-  async function process() {
-    if (!mediaStream) {
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({audio:true});
-      } catch(e) {
-        statusDiv.textContent = "Erreur accès micro : " + e.message;
-        return;
-      }
-    }
-    if (!audioContext) audioContext = new AudioContext();
-    if (!mediaStreamSource) mediaStreamSource = audioContext.createMediaStreamSource(mediaStream);
-    if (!analyser) {
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      mediaStreamSource.connect(analyser);
-      dataArray = new Float32Array(analyser.fftSize);
-    }
-
-    playStartSound();
-    statusDiv.textContent = `Écoute pendant ${LISTEN_DURATION_MS/1000} secondes...`;
-
-    await new Promise(r => setTimeout(r, LISTEN_DURATION_MS));
-
-    analyser.getFloatTimeDomainData(dataArray);
-
-    let pitch = autoCorrelate(dataArray, audioContext.sampleRate);
-    if (pitch < 0) pitch = 440;
-    let tempo = estimateTempo(dataArray);
-
-    statusDiv.textContent = `Pitch estimé: ${pitch.toFixed(1)} Hz\nÉnergie rythmique: ${tempo.toFixed(3)}`;
-
-    let recognizedWord = null;
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      let SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      let recog = new SpeechRecognition();
-      recog.lang = 'fr-FR';
-      recog.interimResults = false;
-      recog.maxAlternatives = 1;
-
-      recog.start();
-      recognizedWord = await new Promise(res => {
-        recog.onresult = (event) => {
-          let transcript = event.results[0][0].transcript.toLowerCase();
-          for (const kw of Object.keys(keywords)) {
-            if (transcript.includes(kw)) {
-              res(kw);
-              recog.stop();
-              return;
-            }
-          }
-          res(null);
-          recog.stop();
-        };
-        recog.onerror = () => res(null);
-        setTimeout(() => { recog.stop(); res(null); }, LISTEN_DURATION_MS);
-      });
-    }
-
-    let chosenUrl;
-    if (recognizedWord && keywords[recognizedWord]) {
-      chosenUrl = pickRandom(keywords[recognizedWord], lastPlayed[recognizedWord]);
-      lastPlayed[recognizedWord] = chosenUrl;
-    } else {
-      chosenUrl = pickRandom(fallbackRecordings, lastPlayed.fallback);
-      lastPlayed.fallback = chosenUrl;
-    }
-
-    let basePitchRate = Math.min(Math.max(pitch / 440, 0.5), 2);
-    let baseTempoRate = Math.min(Math.max(tempo * 10, 0.5), 2);
-
-    // Appliquer la modulation réduite
-    // vitesse réduit à 75% effet
-    // pitch et tempo moitié effet
-
-    let pitchFactor = 1 + (mode === 'invert' ? -(basePitchRate - 1) : (basePitchRate -1)) * 0.5;
-    let tempoFactor = 1 + (mode === 'invert' ? -(baseTempoRate - 1) : (baseTempoRate -1)) * 0.5;
-    let speedFactor = 1 + (mode === 'invert' ? -(basePitchRate * baseTempoRate - 1) : (basePitchRate * baseTempoRate -1)) * 0.75;
-
-    // Moyenne simple
-    let playbackRate = (speedFactor + pitchFactor + tempoFactor) / 3;
-    playbackRate = Math.min(Math.max(playbackRate, 0.5), 2);
-
-    statusDiv.textContent += `\nLecture : ${chosenUrl}\nPlaybackRate calculé : ${playbackRate.toFixed(3)}\nMode : ${mode}`;
-
-    await playAudio(chosenUrl, playbackRate);
-
-    if (mode !== null) process();
+  function playYouSaidSequence() {
+    document.getElementById("status").textContent = "▶️ Lecture : 'Tu as dit...'";
+    const youSaid = new Audio(youSaidClip);
+    youSaid.onended = () => playUserRecording();
+    youSaid.play();
   }
 
-  const btnInvert = document.getElementById('btnInvert');
-  const btnSimilar = document.getElementById('btnSimilar');
-  const statusDiv = document.getElementById('status');
+  function playUserRecording() {
+    document.getElementById("status").textContent = "▶️ Lecture de votre voix...";
+    const playback = new Audio(URL.createObjectURL(recordedBlob));
+    playback.onended = () => {
+      document.getElementById("status").textContent = "⏭️ Réaction...";
+      if (responsePath) {
+        playResponse(responsePath);
+      } else {
+        playResponse(randomFromArray(fallbackClips));
+      }
+    };
+    playback.play();
+  }
 
-  btnInvert.onclick = () => {
-    if (mode === 'invert') return;
-    mode = 'invert';
-    statusDiv.textContent = "Mode INVERSION activé, démarrage...";
-    process();
-  };
-  btnSimilar.onclick = () => {
-    if (mode === 'similar') return;
-    mode = 'similar';
-    statusDiv.textContent = "Mode SIMILARITÉ activé, démarrage...";
-    process();
-  };
-})();
+  function transcribeRecording() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      responsePath = randomFromArray(fallbackClips);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "fr-FR";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    recognition.onresult = e => {
+      const txt = e.results[0][0].transcript.toLowerCase();
+      document.getElementById("status").textContent = `✅ Vous avez dit : "${txt}"`;
+      for (const key in keywordMap) {
+        if (txt.includes(key)) {
+          responsePath = randomFromArray(keywordMap[key]);
+          return;
+        }
+      }
+      responsePath = randomFromArray(fallbackClips);
+    };
+
+    recognition.onerror = e => {
+      document.getElementById("status").textContent = "❌ Erreur : " + e.error;
+      responsePath = randomFromArray(fallbackClips);
+    };
+
+    recognition.start();
+    setTimeout(() => recognition.stop(), 3000);
+  }
+
+  function playResponse(path) {
+    document.getElementById("status").textContent = "▶️ Réponse : " + path;
+    const response = new Audio(path);
+    response.onended = () => startProcess();
+    response.play();
+  }
+
+  function randomFromArray(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
 </script>
-
 </body>
 </html>
 
