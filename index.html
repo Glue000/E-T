@@ -21,7 +21,7 @@
 </head>
 <body>
 
-<h1>🎤 Mic Keyword Response 0.8</h1>
+<h1>🎤 Mic Keyword Response 0.9</h1>
 <button onclick="startProcess()">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 <script>
@@ -35,12 +35,17 @@
   const youSaidClip =  ["reaction 1.mp3"];
   const RECORD_DURATION = 3000;
 
+  // Placeholder for mic start sound
+  const micStartSound = new Audio("click.mp3");
+  micStartSound.volume = 0.30; // low volume
+
   let mediaRecorder;
   let recordedChunks = [];
   let recordedBlob;
   let responsePath = null;
 
   function startProcess() {
+    micStartSound.play(); // Play sound when mic activates
     recordedChunks = [];
     responsePath = null;
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
@@ -124,7 +129,6 @@
 </script>
 </body>
 </html>
-
 
 
 
