@@ -25,35 +25,36 @@
 <button onclick="startProcess()">🎧 Démarrer</button>
 <div id="status">Prêt.</div>
 <script>
-  const keywordMap = {
-    "ok": ["P1.mp3"],
-    "ah": ["P1.mp3"],
-    "oui": ["P2.1.mp3"],
-    "non": ["P2.1.mp3"]
-  };
-  const fallbackClips = ["reaction 2.mp3"];
-  const youSaidClip =  ["reaction 1.mp3"];
+  // No keyword map anymore
+  const fallbackClips = ["reaction 2.mp3",
+                         "P1.mp3", "P2.1.mp3",
+                         "positifR1.mp3",
+                         "M/1P V.mp3",
+                         "M/merci1.mp3",
+                         "M/merci2.mp3",
+                         "M/40s2B AH.mp3",
+                         "M/merci3.mp3",
+                         "M/merci4.mp3"
+                        ];
+  const youSaidClip = ["reaction 1.mp3"];
   const RECORD_DURATION = 3000;
 
-  // Placeholder for mic start sound
+  // Mic start sound placeholder
   const micStartSound = new Audio("click.mp3");
   micStartSound.volume = 0.30; // low volume
 
   let mediaRecorder;
   let recordedChunks = [];
   let recordedBlob;
-  let responsePath = null;
 
   function startProcess() {
     micStartSound.play(); // Play sound when mic activates
     recordedChunks = [];
-    responsePath = null;
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
       mediaRecorder = new MediaRecorder(stream);
       mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
       mediaRecorder.onstop = () => {
         recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
-        transcribeRecording();
         playYouSaidSequence();
       };
       mediaRecorder.start();
@@ -74,46 +75,9 @@
     const playback = new Audio(URL.createObjectURL(recordedBlob));
     playback.onended = () => {
       document.getElementById("status").textContent = "⏭️ Réaction...";
-      if (responsePath) {
-        playResponse(responsePath);
-      } else {
-        playResponse(randomFromArray(fallbackClips));
-      }
+      playResponse(randomFromArray(fallbackClips));
     };
     playback.play();
-  }
-
-  function transcribeRecording() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      responsePath = randomFromArray(fallbackClips);
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = "fr-FR";
-    recognition.interimResults = false;
-    recognition.continuous = false;
-
-    recognition.onresult = e => {
-      const txt = e.results[0][0].transcript.toLowerCase();
-      document.getElementById("status").textContent = `✅ Vous avez dit : "${txt}"`;
-      for (const key in keywordMap) {
-        if (txt.includes(key)) {
-          responsePath = randomFromArray(keywordMap[key]);
-          return;
-        }
-      }
-      responsePath = randomFromArray(fallbackClips);
-    };
-
-    recognition.onerror = e => {
-      document.getElementById("status").textContent = "❌ Erreur : " + e.error;
-      responsePath = randomFromArray(fallbackClips);
-    };
-
-    recognition.start();
-    setTimeout(() => recognition.stop(), 3000);
   }
 
   function playResponse(path) {
@@ -129,7 +93,5 @@
 </script>
 </body>
 </html>
-
-
 
 
