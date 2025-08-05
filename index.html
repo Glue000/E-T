@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Mic Delay CAT System</title>
+  <title>Mic Delay with CAT Audio</title>
   <style>
     body {
       background: black;
@@ -14,119 +14,100 @@
   </style>
 </head>
 <body>
-  <h1>🎤 Mic Delay + CAT Audio</h1>
-  <p>Status: <span id="status">Initializing...</span></p>
+  <h1>Mic Delay with CAT Logic</h1>
+  <p>Status: <span id="status">Starting...</span></p>
+
   <script>
-    let audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    let micStream, sourceNode, recorderNode, playbackNode;
-    let catAudio = null;
-    let currentCategory = null;
-    let wordBuffer = '';
-    let silenceThreshold = 0.01;
+    const status = document.getElementById('status');
+    let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let micStream, micSource, micGain, delayNode;
+    let catPlayer = new Audio();
+    catPlayer.volume = 1.0;
 
-    // Load CAT audio
-    const catAudios = {
-      CAT1: new Audio("CAT1.mp3"),
-      CAT2: new Audio("CAT2.mp3"),
-      CAT3: new Audio("CAT3.mp3"),
-    };
-    Object.values(catAudios).forEach(audio => {
-      audio.loop = true;
-    });
-
-    // Start mic
-    async function startMic() {
-      document.getElementById('status').textContent = 'Requesting Mic...';
+    async function setupMic() {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      sourceNode = audioContext.createMediaStreamSource(micStream);
+      micSource = audioCtx.createMediaStreamSource(micStream);
 
-      // Mic gain boost
-      const gainNode = audioContext.createGain();
-      gainNode.gain.value = 2.0; // Default boost
-      sourceNode.connect(gainNode);
-
-      // Analyze volume
-      const analyser = audioContext.createAnalyser();
-      gainNode.connect(analyser);
-      const dataArray = new Uint8Array(analyser.fftSize);
-      setInterval(() => {
-        analyser.getByteTimeDomainData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          let val = (dataArray[i] - 128) / 128;
-          sum += val * val;
-        }
-        let volume = Math.sqrt(sum / dataArray.length);
-        gainNode.gain.value = volume < silenceThreshold ? 5.0 : 2.0;
-      }, 500);
+      // Gain for boosting weak input
+      micGain = audioCtx.createGain();
+      micGain.gain.value = 2.0;
 
       // Delay playback by 3 seconds
-      const delay = audioContext.createDelay();
-      delay.delayTime.value = 3;
-      gainNode.connect(delay);
-      delay.connect(audioContext.destination);
+      delayNode = audioCtx.createDelay(5.0);
+      delayNode.delayTime.value = 3.0;
 
-      // Start transcription analysis loop
-      runSpeechLoop();
+      // Output to speakers
+      micSource.connect(micGain);
+      micGain.connect(delayNode);
+      delayNode.connect(audioCtx.destination);
 
-      document.getElementById('status').textContent = 'Running...';
+      monitorMicVolume(micStream);
+
+      startSpeechLoop();
+      status.textContent = "Running";
     }
 
-    // Handle CAT audio switch
-    function playCatAudio(category) {
-      if (currentCategory === category) return;
-      if (catAudio) {
-        catAudio.pause();
-        catAudio.currentTime = 0;
-      }
-      catAudio = catAudios[category];
-      currentCategory = category;
-      catAudio.play();
-    }
+    function monitorMicVolume(stream) {
+      const analyser = audioCtx.createAnalyser();
+      const buffer = new Uint8Array(analyser.fftSize);
+      const micMonitor = audioCtx.createMediaStreamSource(stream);
+      micMonitor.connect(analyser);
 
-    // Transcription loop
-    function runSpeechLoop() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognizer = new SpeechRecognition();
-      recognizer.lang = 'en-US';
-      recognizer.continuous = false;
-      recognizer.interimResults = false;
-
-      function analyzeWords(text) {
-        const words = text.trim().split(/\s+/).filter(w => w.length > 0);
-        if (words.length === 0) {
-          playCatAudio("CAT1");
-        } else if (words.length <= 3) {
-          playCatAudio("CAT2");
-        } else {
-          playCatAudio("CAT3");
+      function adjustVolume() {
+        analyser.getByteTimeDomainData(buffer);
+        let sum = 0;
+        for (let i = 0; i < buffer.length; i++) {
+          let val = (buffer[i] - 128) / 128;
+          sum += val * val;
         }
+        let rms = Math.sqrt(sum / buffer.length);
+        // Boost volume if quiet
+        micGain.gain.value = rms < 0.01 ? 4.0 : 1.0;
+        requestAnimationFrame(adjustVolume);
       }
 
-      function loop() {
-        recognizer.start();
-        recognizer.onresult = event => {
-          let transcript = event.results[0][0].transcript;
-          analyzeWords(transcript);
-        };
-        recognizer.onerror = e => {
-          console.warn('Speech error:', e.error);
-          playCatAudio("CAT1"); // fallback on silence
-        };
-        recognizer.onend = () => {
-          setTimeout(loop, 10000); // Wait 10s before next analysis
-        };
-      }
-
-      loop();
+      adjustVolume();
     }
 
-    startMic();
+    function startSpeechLoop() {
+      setInterval(runSpeechAnalysis, 10000);
+    }
+
+    async function runSpeechAnalysis() {
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.start();
+      status.textContent = "Listening...";
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.trim();
+        const wordCount = transcript.split(/\s+/).length;
+        status.textContent = `Heard: "${transcript}" (${wordCount} words)`;
+        playCatByWordCount(wordCount);
+      };
+
+      recognition.onerror = () => {
+        status.textContent = "No speech detected";
+        playCatByWordCount(0);
+      };
+    }
+
+    function playCatByWordCount(count) {
+      let file = 'CAT1.mp3';
+      if (count >= 1 && count <= 3) file = 'CAT2.mp3';
+      else if (count > 3) file = 'CAT3.mp3';
+
+      catPlayer.src = file;
+      catPlayer.play();
+    }
+
+    setupMic();
   </script>
 </body>
 </html>
-
-
 
 
 
