@@ -1,91 +1,217 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Mic Keyword Response</title>
+  <meta charset="UTF-8">
+  <title>Mic Delay Analyzer</title>
   <style>
     body {
       background: black;
       color: white;
       font-family: sans-serif;
-      text-align: center;
       padding: 20px;
+      text-align: center;
     }
-    button {
-      font-size: 18px;
+    button, select {
+      font-size: 16px;
       margin: 10px;
-      padding: 10px 20px;
-      cursor: pointer;
+    }
+    audio {
+      display: block;
+      margin: 20px auto;
     }
   </style>
 </head>
 <body>
+  <h2>Mic Delay + Reaction System</h2>
+  <button onclick="startSystem()">Start System</button>
+  <select id="langSelect">
+    <option value="en-US">English</option>
+    <option value="fr-FR">Français</option>
+  </select>
 
-<h1>🎤 Mic Keyword Response 0.9</h1>
-<button onclick="startProcess()">🎧 Démarrer</button>
-<div id="status">Prêt.</div>
-<script>
-  // No keyword map anymore
-  const fallbackClips = ["reaction 2.mp3",
-                         "P1.mp3", "P2.1.mp3",
-                        ];
-  const youSaidClip = ["reaction 1.mp3"];
-  const RECORD_DURATION = 3000;
-
-  // Mic start sound placeholder
-  const micStartSound = new Audio("click.mp3");
-  micStartSound.volume = 0.30; // low volume
-
-  let mediaRecorder;
-  let recordedChunks = [];
-  let recordedBlob;
-
-  function startProcess() {
-    micStartSound.play(); // Play sound when mic activates
-    recordedChunks = [];
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = e => recordedChunks.push(e.data);
-      mediaRecorder.onstop = () => {
-        recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
-        playYouSaidSequence();
-      };
-      mediaRecorder.start();
-      document.getElementById("status").textContent = "🎙️ Enregistrement...";
-      setTimeout(() => mediaRecorder.stop(), RECORD_DURATION);
-    });
-  }
-
-  function playYouSaidSequence() {
-    document.getElementById("status").textContent = "▶️ Lecture : 'Tu as dit...'";
-    const youSaid = new Audio(youSaidClip);
-    youSaid.onended = () => playUserRecording();
-    youSaid.play();
-  }
-
-  function playUserRecording() {
-    document.getElementById("status").textContent = "▶️ Lecture de votre voix...";
-    const playback = new Audio(URL.createObjectURL(recordedBlob));
-    playback.onended = () => {
-      document.getElementById("status").textContent = "⏭️ Réaction...";
-      playResponse(randomFromArray(fallbackClips));
+  <script>
+    let micStream, audioCtx, micSource, recorder, chunks = [];
+    let lang = "en-US";
+    let minVolume = 0.3; // Minimum mic echo volume (0.0–1.0)
+    let delaySeconds = 3;
+    let analyser, micGain, playbackNode;
+    let bgAudio = new Audio("background.mp3");
+    let catAudios = {
+      1: new Audio("cat1.mp3"),
+      2: new Audio("cat2.mp3"),
+      3: new Audio("cat3.mp3")
     };
-    playback.play();
-  }
 
-  function playResponse(path) {
-    document.getElementById("status").textContent = "▶️ Réponse : " + path;
-    const response = new Audio(path);
-    response.onended = () => startProcess();
-    response.play();
-  }
+    let pitchRatio = 1;
+    let currentCatAudio = null;
+    let transcriptionBuffer = [];
 
-  function randomFromArray(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
-  }
-</script>
+    function startSystem() {
+      lang = document.getElementById("langSelect").value;
+      initAudio();
+      setInterval(analyzeWords, 10000); // every 10s
+    }
+
+    async function initAudio() {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      micSource = audioCtx.createMediaStreamSource(micStream);
+      micGain = audioCtx.createGain();
+      micGain.gain.value = minVolume;
+
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+
+      micSource.connect(analyser);
+      micSource.connect(micGain);
+
+      let bufferNode = audioCtx.createDelay();
+      bufferNode.delayTime.value = delaySeconds;
+      micGain.connect(bufferNode);
+
+      playbackNode = audioCtx.createGain();
+      bufferNode.connect(playbackNode).connect(audioCtx.destination);
+
+      // Setup background audio
+      bgAudio.loop = true;
+      bgAudio.volume = 0.5;
+      bgAudio.play();
+
+      // Start recording loop for STT every 10s
+      startRecordingLoop();
+      monitorMicVolume();
+    }
+
+    function monitorMicVolume() {
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      function update() {
+        analyser.getByteTimeDomainData(dataArray);
+        let avg = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        let volume = Math.abs(avg - 128) / 128;
+
+        // Adjust background audio pitch & volume dynamically
+        pitchRatio = 1 + (volume * 0.5); // range ~1–1.5
+        bgAudio.playbackRate = pitchRatio;
+        bgAudio.volume = 0.2 + volume * 0.8;
+
+        requestAnimationFrame(update);
+      }
+      update();
+    }
+
+    function startRecordingLoop() {
+      const mediaRecorder = new MediaRecorder(micStream);
+      mediaRecorder.ondataavailable = (e) => {
+        let blob = e.data;
+        transcribeBlob(blob);
+      };
+
+      function record10s() {
+        mediaRecorder.start();
+        setTimeout(() => mediaRecorder.stop(), 9000); // ~10s
+      }
+
+      record10s();
+      setInterval(record10s, 10000);
+    }
+
+    function transcribeBlob(blob) {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const audioBuffer = await audioCtx.decodeAudioData(reader.result);
+        const wav = audioBufferToWav(audioBuffer);
+        const speechBlob = new Blob([wav], { type: 'audio/wav' });
+        const transcript = await transcribeSpeech(speechBlob);
+        if (transcript !== null) {
+          handleTranscript(transcript);
+        }
+      };
+      reader.readAsArrayBuffer(blob);
+    }
+
+    async function transcribeSpeech(blob) {
+      // Using Web Speech API (live audio not supported) so simulate with fake STT
+      // Replace with real API call like Whisper or Google if needed
+      return new Promise((resolve) => {
+        const fakeResult = "simulate words here";
+        resolve(fakeResult);
+      });
+    }
+
+    function handleTranscript(text) {
+      const words = text.trim().split(/\s+/);
+      const count = words.length;
+      let cat = 1;
+      if (count === 0) cat = 1;
+      else if (count <= 3) cat = 2;
+      else cat = 3;
+
+      playCatAudio(cat);
+    }
+
+    function playCatAudio(cat) {
+      if (currentCatAudio) {
+        currentCatAudio.pause();
+        currentCatAudio.currentTime = 0;
+      }
+
+      currentCatAudio = catAudios[cat];
+      currentCatAudio.playbackRate = pitchRatio;
+      currentCatAudio.volume = 1;
+      currentCatAudio.play();
+      bgAudio.pause();
+
+      currentCatAudio.onended = () => {
+        bgAudio.play();
+        currentCatAudio = null;
+      };
+    }
+
+    // WAV export (simplified)
+    function audioBufferToWav(buffer) {
+      let length = buffer.length * buffer.numberOfChannels * 2 + 44;
+      let arrayBuffer = new ArrayBuffer(length);
+      let view = new DataView(arrayBuffer);
+      let channels = [];
+      let offset = 0;
+
+      function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      }
+
+      writeString(view, 0, 'RIFF'); offset += 4;
+      view.setUint32(offset, length - 8, true); offset += 4;
+      writeString(view, offset, 'WAVE'); offset += 4;
+      writeString(view, offset, 'fmt '); offset += 4;
+      view.setUint32(offset, 16, true); offset += 4;
+      view.setUint16(offset, 1, true); offset += 2;
+      view.setUint16(offset, buffer.numberOfChannels, true); offset += 2;
+      view.setUint32(offset, buffer.sampleRate, true); offset += 4;
+      view.setUint32(offset, buffer.sampleRate * 4, true); offset += 4;
+      view.setUint16(offset, buffer.numberOfChannels * 2, true); offset += 2;
+      view.setUint16(offset, 16, true); offset += 2;
+      writeString(view, offset, 'data'); offset += 4;
+      view.setUint32(offset, length - offset - 4, true); offset += 4;
+
+      for (let i = 0; i < buffer.numberOfChannels; i++) {
+        channels.push(buffer.getChannelData(i));
+      }
+
+      for (let i = 0; i < buffer.length; i++) {
+        for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+          let sample = Math.max(-1, Math.min(1, channels[ch][i]));
+          view.setInt16(offset, sample * 0x7FFF, true);
+          offset += 2;
+        }
+      }
+
+      return arrayBuffer;
+    }
+  </script>
 </body>
 </html>
-
 
 
