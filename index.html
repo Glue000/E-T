@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Mic Delay + Dynamic Cat Audio</title>
+  <meta charset="UTF-8" />
+  <title>Mic Delay CAT System</title>
   <style>
     body {
       background: black;
@@ -11,190 +11,121 @@
       text-align: center;
       padding: 20px;
     }
-    button, select {
-      font-size: 16px;
-      margin: 10px;
-    }
   </style>
 </head>
 <body>
-  <h2>Mic Echo</h2>
-  <button onclick="startSystem()">Start</button>
-  <label>Language:
-    <select id="langSelect">
-      <option value="en-US">English</option>
-      <option value="fr-FR">Français</option>
-    </select>
-  </label>
-
+  <h1>🎤 Mic Delay + CAT Audio</h1>
+  <p>Status: <span id="status">Initializing...</span></p>
   <script>
-    let audioCtx, micStream, micSource, micGain, analyser;
-    let minVolume = 1.5; // Set minimum mic echo volume
-    let delaySec = 3;
+    let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    let micStream, sourceNode, recorderNode, playbackNode;
+    let catAudio = null;
+    let currentCategory = null;
+    let wordBuffer = '';
+    let silenceThreshold = 0.01;
 
-    let catAudios = {
-      1: new Audio("CAT1.mp3"),
-      2: new Audio("CAT2.mp3"),
-      3: new Audio("CAT3.mp3")
+    // Load CAT audio
+    const catAudios = {
+      CAT1: new Audio("CAT1.mp3"),
+      CAT2: new Audio("CAT2.mp3"),
+      CAT3: new Audio("CAT3.mp3"),
     };
-    let currentCatAudio = null;
-    let pitchRatio = 1;
+    Object.values(catAudios).forEach(audio => {
+      audio.loop = true;
+    });
 
-    function startSystem() {
-      let lang = document.getElementById("langSelect").value;
-      initAudio();
-      startSTTLoop(lang);
-    }
-
-    async function initAudio() {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Start mic
+    async function startMic() {
+      document.getElementById('status').textContent = 'Requesting Mic...';
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      sourceNode = audioContext.createMediaStreamSource(micStream);
 
-      micSource = audioCtx.createMediaStreamSource(micStream);
+      // Mic gain boost
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 2.0; // Default boost
+      sourceNode.connect(gainNode);
 
-      micGain = audioCtx.createGain();
-      micGain.gain.value = minVolume;
-
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
-
-      micSource.connect(analyser);
-      micSource.connect(micGain);
-
-      let delayNode = audioCtx.createDelay();
-      delayNode.delayTime.value = delaySec;
-
-      micGain.connect(delayNode).connect(audioCtx.destination);
-
-      monitorMicVolume();
-    }
-
-    function monitorMicVolume() {
-      const buffer = new Uint8Array(analyser.frequencyBinCount);
-      function update() {
-        analyser.getByteTimeDomainData(buffer);
-        let avg = buffer.reduce((a, b) => a + b) / buffer.length;
-        let vol = Math.abs(avg - 128) / 128;
-
-        // Set pitch and volume for current playing cat audio
-        pitchRatio = 1 + (vol * 0.5);
-        if (currentCatAudio) {
-          currentCatAudio.playbackRate = pitchRatio;
-          currentCatAudio.volume = 0.3 + vol * 0.7;
+      // Analyze volume
+      const analyser = audioContext.createAnalyser();
+      gainNode.connect(analyser);
+      const dataArray = new Uint8Array(analyser.fftSize);
+      setInterval(() => {
+        analyser.getByteTimeDomainData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          let val = (dataArray[i] - 128) / 128;
+          sum += val * val;
         }
+        let volume = Math.sqrt(sum / dataArray.length);
+        gainNode.gain.value = volume < silenceThreshold ? 5.0 : 2.0;
+      }, 500);
 
-        requestAnimationFrame(update);
+      // Delay playback by 3 seconds
+      const delay = audioContext.createDelay();
+      delay.delayTime.value = 3;
+      gainNode.connect(delay);
+      delay.connect(audioContext.destination);
+
+      // Start transcription analysis loop
+      runSpeechLoop();
+
+      document.getElementById('status').textContent = 'Running...';
+    }
+
+    // Handle CAT audio switch
+    function playCatAudio(category) {
+      if (currentCategory === category) return;
+      if (catAudio) {
+        catAudio.pause();
+        catAudio.currentTime = 0;
       }
-      update();
+      catAudio = catAudios[category];
+      currentCategory = category;
+      catAudio.play();
     }
 
-    function startSTTLoop(lang) {
-      const mediaRecorder = new MediaRecorder(micStream);
-      mediaRecorder.ondataavailable = (e) => {
-        const blob = e.data;
-        transcribeAndPlay(blob, lang);
-      };
+    // Transcription loop
+    function runSpeechLoop() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognizer = new SpeechRecognition();
+      recognizer.lang = 'en-US';
+      recognizer.continuous = false;
+      recognizer.interimResults = false;
 
-      function record10s() {
-        mediaRecorder.start();
-        setTimeout(() => mediaRecorder.stop(), 9000);
-      }
-
-      record10s();
-      setInterval(record10s, 10000);
-    }
-
-    async function transcribeAndPlay(blob, lang) {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const arrayBuffer = reader.result;
-        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        const wav = audioBufferToWav(audioBuffer);
-        const wavBlob = new Blob([wav], { type: 'audio/wav' });
-
-        const transcript = await fakeTranscription(wavBlob, lang); // Replace this for real STT
-        handleTranscript(transcript);
-      };
-      reader.readAsArrayBuffer(blob);
-    }
-
-    function handleTranscript(text) {
-      const words = text.trim().split(/\s+/).filter(Boolean);
-      let cat = 1;
-      if (words.length === 0) cat = 1;
-      else if (words.length <= 3) cat = 2;
-      else cat = 3;
-
-      playCat(cat);
-    }
-
-    function playCat(cat) {
-      if (currentCatAudio) {
-        currentCatAudio.pause();
-        currentCatAudio.currentTime = 0;
-      }
-
-      currentCatAudio = catAudios[cat];
-      currentCatAudio.playbackRate = pitchRatio;
-      currentCatAudio.volume = 0.4;
-      currentCatAudio.play();
-    }
-
-    async function fakeTranscription(blob, lang) {
-      // Fake placeholder – always returns a simulated result
-      const examples = {
-        "en-US": ["", "hi", "yes ok", "this is long enough to be cat 3"],
-        "fr-FR": ["", "salut", "oui non ok", "c'est une longue phrase pour le test"]
-      };
-      const results = examples[lang];
-      const random = results[Math.floor(Math.random() * results.length)];
-      return new Promise(resolve => setTimeout(() => resolve(random), 500));
-    }
-
-    // Convert AudioBuffer to WAV
-    function audioBufferToWav(buffer) {
-      const numOfChan = buffer.numberOfChannels;
-      const length = buffer.length * numOfChan * 2 + 44;
-      const bufferArray = new ArrayBuffer(length);
-      const view = new DataView(bufferArray);
-      let offset = 0;
-
-      const writeStr = (str) => {
-        for (let i = 0; i < str.length; i++) {
-          view.setUint8(offset++, str.charCodeAt(i));
+      function analyzeWords(text) {
+        const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+        if (words.length === 0) {
+          playCatAudio("CAT1");
+        } else if (words.length <= 3) {
+          playCatAudio("CAT2");
+        } else {
+          playCatAudio("CAT3");
         }
-      };
-
-      const floatTo16Bit = (output, offset, input) => {
-        for (let i = 0; i < input.length; i++, offset += 2) {
-          let s = Math.max(-1, Math.min(1, input[i]));
-          view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        }
-      };
-
-      writeStr("RIFF");
-      view.setUint32(offset, length - 8, true); offset += 4;
-      writeStr("WAVEfmt ");
-      view.setUint32(offset, 16, true); offset += 4;
-      view.setUint16(offset, 1, true); offset += 2;
-      view.setUint16(offset, numOfChan, true); offset += 2;
-      view.setUint32(offset, buffer.sampleRate, true); offset += 4;
-      view.setUint32(offset, buffer.sampleRate * 2 * numOfChan, true); offset += 4;
-      view.setUint16(offset, numOfChan * 2, true); offset += 2;
-      view.setUint16(offset, 16, true); offset += 2;
-      writeStr("data");
-      view.setUint32(offset, length - 44, true); offset += 4;
-
-      for (let ch = 0; ch < numOfChan; ch++) {
-        floatTo16Bit(view, offset, buffer.getChannelData(ch));
-        offset += buffer.length * 2;
       }
 
-      return bufferArray;
+      function loop() {
+        recognizer.start();
+        recognizer.onresult = event => {
+          let transcript = event.results[0][0].transcript;
+          analyzeWords(transcript);
+        };
+        recognizer.onerror = e => {
+          console.warn('Speech error:', e.error);
+          playCatAudio("CAT1"); // fallback on silence
+        };
+        recognizer.onend = () => {
+          setTimeout(loop, 10000); // Wait 10s before next analysis
+        };
+      }
+
+      loop();
     }
+
+    startMic();
   </script>
 </body>
 </html>
+
 
 
 
