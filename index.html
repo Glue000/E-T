@@ -1,170 +1,125 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8" />
-<title>Mic Delay + CAT Audio dynamique</title>
-<style>
-  body {
-    background: #111;
-    color: white;
-    font-family: Arial, sans-serif;
-    text-align: center;
-    padding: 20px;
-  }
-  button {
-    font-size: 18px;
-    padding: 10px 20px;
-    margin-bottom: 20px;
-    cursor: pointer;
-  }
-  label {
-    display: block;
-    margin-top: 20px;
-  }
-  input[type="range"] {
-    width: 80%;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <title>Mic Delay + CAT Response</title>
+  <style>
+    body {
+      background: #111;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    button {
+      font-size: 18px;
+      padding: 10px 20px;
+      margin-bottom: 20px;
+    }
+    input[type="range"] {
+      width: 80%;
+    }
+    label {
+      display: block;
+      margin-top: 20px;
+    }
+  </style>
 </head>
 <body>
 
-<h1>Mic Delay + CAT Audio dynamique 2</h1>
-<button id="startBtn">Démarrer</button>
+  <h1>Mic Delay + CAT Audio</h1>
+  <button id="startBtn">Démarrer</button>
 
-<label for="micVol">Volume micro</label>
-<input type="range" id="micVol" min="0" max="1" step="0.01" value="0.5" />
+  <label for="micVol">Volume micro</label>
+  <input type="range" id="micVol" min="0" max="1" step="0.01" value="0.5" />
 
-<label for="catVol">Volume CAT</label>
-<input type="range" id="catVol" min="0" max="1" step="0.01" value="0.5" />
+  <label for="catVol">Volume CAT</label>
+  <input type="range" id="catVol" min="0" max="1" step="0.01" value="0.5" />
 
-<script>
-(async () => {
-  const startBtn = document.getElementById('startBtn');
-  const micVolSlider = document.getElementById('micVol');
-  const catVolSlider = document.getElementById('catVol');
+  <script>
+    const startBtn = document.getElementById('startBtn');
+    const micVolSlider = document.getElementById('micVol');
+    const catVolSlider = document.getElementById('catVol');
 
-  let audioCtx;
-  let gainNodeMic;
-  let gainNodeCat;
-  let micSource;
-  let analyser;
-  let dataArray;
-
-  let catAudio;
-  let catSource;
-
-  let currentCat = "";
-
-  startBtn.onclick = async () => {
-    startBtn.disabled = true;
-
-    audioCtx = new AudioContext();
-    await audioCtx.resume();
-
-    // Récup micro
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    micSource = audioCtx.createMediaStreamSource(stream);
-
-    // Delay 3s pour écoute micro retardée
-    const delayNode = audioCtx.createDelay(5.0);
-    delayNode.delayTime.value = 3.0;
-
-    // Gain micro (volume slider * dynamique)
-    gainNodeMic = audioCtx.createGain();
-    gainNodeMic.gain.value = parseFloat(micVolSlider.value);
-
-    // Connection micro -> delay -> gain -> sortie
-    micSource.connect(delayNode);
-    delayNode.connect(gainNodeMic);
-    gainNodeMic.connect(audioCtx.destination);
-
-    // Analyser pour volume dynamique
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
-    dataArray = new Uint8Array(analyser.frequencyBinCount);
-    micSource.connect(analyser);
-
-    // Audio CAT setup
-    catAudio = new Audio();
+    let audioCtx, gainNodeMic, gainNodeCat;
+    let catAudio = new Audio();
     catAudio.loop = true;
+    let currentCat = "";
 
-    gainNodeCat = audioCtx.createGain();
-    gainNodeCat.gain.value = parseFloat(catVolSlider.value);
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognizer = new SpeechRecognition();
+    recognizer.lang = 'fr-FR';
+    recognizer.continuous = true;
+    recognizer.interimResults = false;
 
-    // Crée la source media element
-    catSource = audioCtx.createMediaElementSource(catAudio);
-    catSource.connect(gainNodeCat);
-    gainNodeCat.connect(audioCtx.destination);
+    startBtn.onclick = async () => {
+      startBtn.disabled = true;
+      audioCtx = new AudioContext();
 
-    // Sliders volume
-    micVolSlider.oninput = () => {
-      // Pas toucher directement gain ici, gestion dynamique dans updateMicGain()
-    };
-    catVolSlider.oninput = () => {
-      if(gainNodeCat) gainNodeCat.gain.value = parseFloat(catVolSlider.value);
-    };
+      // Micro avec délai
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const micSource = audioCtx.createMediaStreamSource(stream);
 
-    // Fonction dynamique pour ajuster gain micro selon volume RMS
-    function updateMicGain() {
-      analyser.getByteTimeDomainData(dataArray);
-      let sumSquares = 0;
-      for(let i=0; i < dataArray.length; i++) {
-        const norm = (dataArray[i] - 128)/128;
-        sumSquares += norm*norm;
-      }
-      const rms = Math.sqrt(sumSquares / dataArray.length);
+      const delay = audioCtx.createDelay(5.0);
+      delay.delayTime.value = 3.0;
 
-      let dynamicGain = 1;
-      if(rms < 0.01) dynamicGain = 2.5;
-      else if(rms < 0.03) dynamicGain = 1.7;
-      else if(rms < 0.06) dynamicGain = 1.2;
-      else if(rms > 0.1) dynamicGain = 0.8;
-      else dynamicGain = 1.0;
+      gainNodeMic = audioCtx.createGain();
+      gainNodeMic.gain.value = parseFloat(micVolSlider.value);
 
-      gainNodeMic.gain.value = parseFloat(micVolSlider.value) * dynamicGain;
-      requestAnimationFrame(updateMicGain);
-    }
-    updateMicGain();
+      micSource.connect(delay);
+      delay.connect(gainNodeMic);
+      gainNodeMic.connect(audioCtx.destination);
 
-    // Fonction qui choisit CAT selon volume et change la source audio
-    function checkVolumeAndPlayCat() {
-      analyser.getByteFrequencyData(dataArray);
-      let sum = 0;
-      for(let i=0; i < dataArray.length; i++) {
-        sum += dataArray[i];
-      }
-      const avg = sum / dataArray.length;
+      // Cat audio routing
+      gainNodeCat = audioCtx.createGain();
+      gainNodeCat.gain.value = parseFloat(catVolSlider.value);
 
-      let selectedCat = "";
-      if(avg < 10) selectedCat = "CAT1.mp3";
-      else if(avg < 40) selectedCat = "CAT2.mp3";
-      else selectedCat = "CAT3.mp3";
+      const catSource = audioCtx.createMediaElementSource(catAudio);
+      catSource.connect(gainNodeCat);
+      gainNodeCat.connect(audioCtx.destination);
 
-      if(selectedCat !== currentCat) {
-        if(catAudio) {
+      micVolSlider.oninput = () => {
+        gainNodeMic.gain.value = parseFloat(micVolSlider.value);
+      };
+      catVolSlider.oninput = () => {
+        gainNodeCat.gain.value = parseFloat(catVolSlider.value);
+      };
+
+      // Lancer reconnaissance vocale
+      recognizer.start();
+
+      recognizer.onresult = (event) => {
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            transcript += event.results[i][0].transcript + " ";
+          }
+        }
+
+        let words = transcript.trim().split(/\s+/).filter(w => w.length > 0);
+        let count = words.length;
+
+        let selectedCat = "";
+        if (count === 0) selectedCat = "CAT1.mp3";
+        else if (count <= 3) selectedCat = "CAT2.mp3";
+        else selectedCat = "CAT3.mp3";
+
+        if (selectedCat !== currentCat) {
           catAudio.pause();
           catAudio.src = selectedCat;
-          catAudio.load();
-
-          // Important: on doit recréer MediaElementSource à chaque nouvelle audio
-          if(catSource) catSource.disconnect();
-          catSource = audioCtx.createMediaElementSource(catAudio);
-          catSource.connect(gainNodeCat);
-
-          catAudio.play().catch(e => console.error("Erreur lecture CAT audio:", e));
+          catAudio.currentTime = 0;
+          catAudio.play();
           currentCat = selectedCat;
         }
-      }
-      requestAnimationFrame(checkVolumeAndPlayCat);
-    }
-    checkVolumeAndPlayCat();
-  };
-})();
-</script>
+      };
+
+      recognizer.onerror = (e) => {
+        console.warn("Erreur reco:", e.error);
+        recognizer.stop();
+        setTimeout(() => recognizer.start(), 500);
+      };
+    };
+  </script>
 
 </body>
 </html>
-
-
-
-
