@@ -3,269 +3,286 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Mic + Dynamic CAT Audio</title>
+<title>Mic Delay + Dynamic Cat Audio</title>
 <style>
   body {
     background: #111;
-    color: white;
+    color: #eee;
     font-family: Arial, sans-serif;
+    padding: 1rem;
     text-align: center;
-    padding: 20px;
   }
   label, input {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
   }
-  input[type="range"] {
-    width: 300px;
+  #status {
+    margin: 1rem 0;
   }
 </style>
 </head>
 <body>
-<h1>Mic Playback + Dynamic CAT Audio</h1>
-<p>Mic plays with 3s delay, CAT audio changes based on spoken words.</p>
+<h1>Mic Delay with Dynamic Cat Audio</h1>
+<p>Mic plays back with 3s delay. Cat audios (CAT1, CAT2, CAT3) play based on speech detected.</p>
 
-<label for="volume">Overall Output Volume:</label><br />
-<input type="range" id="volume" min="0" max="1" step="0.01" value="0.7" />
+<label for="catVolume">Cat audio volume:</label>
+<input type="range" id="catVolume" min="0" max="1" step="0.01" value="0.5" />
+<div id="status">Initializing...</div>
 
 <script>
 (async () => {
-  // Get volume slider element
-  const volumeSlider = document.getElementById('volume');
+  const statusEl = document.getElementById('status');
+  const catVolumeSlider = document.getElementById('catVolume');
 
-  // Audio context setup
+  // Audio context and nodes
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-  // Create gain nodes for mic and CAT audio for separate control if needed
-  const masterGain = audioCtx.createGain();
-  masterGain.gain.value = volumeSlider.value;
-  masterGain.connect(audioCtx.destination);
-
   // Variables
-  let micStream;
-  let micSource;
-  let micProcessor;
+  let micStream, micSource, micProcessor, micDelayNode;
   let delayedBuffer = [];
-  const delaySeconds = 3;
-  const sampleRate = audioCtx.sampleRate;
-  const delaySamples = delaySeconds * sampleRate;
+  const delayTime = 3000; // 3 seconds delay
 
-  // Buffers for delayed playback
-  let playbackNode;
-
-  // Setup analyser for volume detection and speech analysis
-  const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 2048;
-  const dataArray = new Uint8Array(analyser.fftSize);
-
-  // Setup scriptProcessorNode for capturing audio data for speech analysis
-  const scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
-
-  // CAT audio elements
-  let catAudio = new Audio();
-  catAudio.loop = true;
-  catAudio.crossOrigin = "anonymous";
-  catAudio.src = "CAT1.mp3"; // initial dummy
-
-  // Create media element source for CAT audio
-  const catSource = audioCtx.createMediaElementSource(catAudio);
-
-  // Create gain and pitch nodes for CAT audio
-  const catGainNode = audioCtx.createGain();
-  catGainNode.gain.value = 0.7;
-
-  // Pitch shifting via playbackRate (simplified)
-  catAudio.playbackRate = 1;
-
-  catSource.connect(catGainNode).connect(masterGain);
-
-  // Overall volume control updates both mic gain and cat gain
-  volumeSlider.addEventListener('input', () => {
-    masterGain.gain.value = volumeSlider.value;
-  });
-
-  // Create gain node for mic playback volume (dynamic volume)
+  // Create gain node for mic playback volume (dynamic)
   const micGainNode = audioCtx.createGain();
   micGainNode.gain.value = 1;
-  micGainNode.connect(masterGain);
 
-  // Set up buffer source for delayed mic playback
-  let micDelayBufferSource;
+  // Cat audio elements
+  const catAudio = new Audio();
+  catAudio.loop = true;
+  catAudio.volume = 0.5;
+  catAudio.crossOrigin = "anonymous";
 
-  // To store mic input chunks for delayed playback
-  let micChunks = [];
+  // Cat audio source nodes and pitch control
+  let catSourceNode, catGainNode, catPitchNode;
 
-  // For speech detection, we'll collect text from SpeechRecognition (if supported)
-  // fallback: count amplitude peaks as proxy for word count
-  let lastWordCount = 0;
+  // Helper to create pitch/pan nodes for cat audio playback
+  function createCatAudioNodes() {
+    if(catSourceNode) catSourceNode.disconnect();
+    if(catGainNode) catGainNode.disconnect();
 
-  // SpeechRecognition setup
-  let recognition;
-  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US'; // or your preferred language
-  } else {
-    recognition = null;
-    console.warn('SpeechRecognition not supported in this browser.');
+    catGainNode = audioCtx.createGain();
+    catGainNode.gain.value = catVolumeSlider.value;
+
+    // Simple playbackRate for pitch variation - will be controlled dynamically
+    catPitchNode = audioCtx.createBufferSource();
+
+    return { catGainNode, catPitchNode };
   }
 
-  // Function to start recognition and handle word counting
-  let latestTranscript = '';
-  let wordCount = 0;
-
-  if (recognition) {
-    recognition.start();
-    recognition.onresult = (event) => {
-      let transcript = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if(event.results[i].isFinal) {
-          transcript += event.results[i][0].transcript.trim() + ' ';
-        }
-      }
-      if (transcript.trim() !== '') {
-        latestTranscript = transcript.trim();
-        wordCount = latestTranscript.split(/\s+/).length;
-      } else {
-        wordCount = 0;
-      }
-    };
-    recognition.onerror = (e) => {
-      console.error('SpeechRecognition error:', e.error);
-    };
-    recognition.onend = () => {
-      // Restart recognition on end to keep continuous listening
-      recognition.start();
-    };
+  // Load audio file as AudioBuffer
+  async function loadAudioBuffer(url) {
+    const resp = await fetch(url);
+    const arrayBuffer = await resp.arrayBuffer();
+    return await audioCtx.decodeAudioData(arrayBuffer);
   }
 
-  // Function to load and play CAT audio depending on word count category
-  function playCatAudio(catNumber) {
-    const src = `CAT${catNumber}.mp3`;
-    if (catAudio.src.includes(src)) return; // already playing that
+  // We'll need to handle mic audio with delay and dynamic volume:
+  // Strategy:
+  // 1. Capture mic input with MediaStreamAudioSourceNode
+  // 2. Use ScriptProcessorNode or AudioWorklet to buffer audio data
+  // 3. After 3 seconds, play back the buffered audio via AudioBufferSourceNode (looping buffer or chunked)
+  // Because ScriptProcessorNode is deprecated, we'll use it anyway for simplicity here.
+  // We store chunks of audio for 3 seconds, then play them in order.
 
-    catAudio.pause();
-    catAudio.src = src;
-    catAudio.playbackRate = 1; // reset pitch
-    catAudio.volume = 0.7;
-    catAudio.play().catch(e => console.warn('CAT audio play error:', e));
-  }
-
-  // Function to vary CAT audio pitch and volume based on mic volume
-  function varyCatAudioEffects(micVol) {
-    // Pitch between 0.8 and 1.2 based on mic volume (normalized)
-    const pitch = 0.8 + 0.4 * micVol;
-    catAudio.playbackRate = pitch;
-
-    // Volume between 0.3 and 1 based on mic volume
-    const vol = 0.3 + 0.7 * micVol;
-    catGainNode.gain.value = vol;
-  }
-
-  // Get mic input and process delayed playback
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  } catch (err) {
-    alert('Microphone access denied or not available.');
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    statusEl.textContent = 'Mic access granted. Setting up...';
+  } catch (e) {
+    statusEl.textContent = 'Error accessing mic: ' + e.message;
     return;
   }
 
   micSource = audioCtx.createMediaStreamSource(micStream);
-  micSource.connect(analyser);
 
-  // We'll use a ScriptProcessorNode to grab mic PCM data for volume & delay playback
-  scriptNode.onaudioprocess = (audioProcessingEvent) => {
-    const inputBuffer = audioProcessingEvent.inputBuffer;
-    const inputData = inputBuffer.getChannelData(0);
+  // Buffer variables for delay playback
+  const sampleRate = audioCtx.sampleRate;
+  const bufferLengthInSec = delayTime / 1000;
+  const bufferSize = 4096; // ScriptProcessor buffer size
+  const maxBuffers = Math.ceil(bufferLengthInSec * sampleRate / bufferSize);
 
-    // Calculate RMS for volume estimate
-    let sumSquares = 0;
-    for (let i = 0; i < inputData.length; i++) {
-      sumSquares += inputData[i] * inputData[i];
-    }
-    const rms = Math.sqrt(sumSquares / inputData.length);
-    // Normalize rms 0 to 1 (roughly)
-    const micVolumeNormalized = Math.min(rms * 10, 1);
+  const buffersQueue = [];
 
-    // Dynamic mic gain logic:
-    // Increase gain dramatically if micVolumeNormalized is low (<0.1)
-    if (micVolumeNormalized < 0.1) {
-      micGainNode.gain.value = 5; // big boost
+  // Gain node for mic playback volume
+  micSource.connect(micGainNode);
+  micGainNode.connect(audioCtx.destination);
+
+  // Create ScriptProcessorNode for capturing mic audio chunks
+  micProcessor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+  micSource.connect(micProcessor);
+  micProcessor.connect(audioCtx.destination); // for input processing
+
+  micProcessor.onaudioprocess = (e) => {
+    const inputData = e.inputBuffer.getChannelData(0);
+    // Copy input data (Float32Array)
+    buffersQueue.push(new Float32Array(inputData));
+    // Keep queue length max
+    if (buffersQueue.length > maxBuffers) buffersQueue.shift();
+
+    // Analyze volume for dynamic mic volume adjustment
+    let rms = 0;
+    for (let i = 0; i < inputData.length; i++) rms += inputData[i] * inputData[i];
+    rms = Math.sqrt(rms / inputData.length);
+
+    // Dynamic volume scaling for mic playback
+    // If rms low (<0.01), increase gain dramatically (up to 8)
+    if (rms < 0.01) {
+      micGainNode.gain.setTargetAtTime(8, audioCtx.currentTime, 0.1);
+    } else if (rms < 0.05) {
+      micGainNode.gain.setTargetAtTime(3, audioCtx.currentTime, 0.1);
     } else {
-      micGainNode.gain.value = 1 + micVolumeNormalized * 2; // boost with volume
+      micGainNode.gain.setTargetAtTime(1, audioCtx.currentTime, 0.1);
     }
-
-    // Store input buffer data for delayed playback
-    // We store Float32Arrays in micChunks
-    micChunks.push(new Float32Array(inputData));
-
-    // Limit buffer size (delaySamples)
-    const maxChunks = Math.ceil(delaySamples / inputData.length);
-    if (micChunks.length > maxChunks) {
-      micChunks.shift();
-    }
-
-    // Vary CAT audio pitch and volume based on current mic volume
-    varyCatAudioEffects(micVolumeNormalized);
   };
 
-  micSource.connect(scriptNode);
-  scriptNode.connect(audioCtx.destination); // needed to keep scriptNode alive
-
-  // Play delayed mic audio from buffered chunks
-  // We'll use an AudioWorklet if available or fallback
-  // For simplicity: play buffered chunks via AudioBufferSourceNodes
-
+  // Function to play back delayed mic audio by dequeueing buffers 3 seconds later
   function playDelayedMic() {
-    if (micChunks.length === 0) {
-      requestAnimationFrame(playDelayedMic);
-      return;
-    }
+    if (buffersQueue.length === 0) return;
 
-    // Create a buffer from the oldest chunk
-    const chunkData = micChunks.shift();
-    const buffer = audioCtx.createBuffer(1, chunkData.length, sampleRate);
-    buffer.copyToChannel(chunkData, 0);
+    // Take the oldest buffer from queue to play
+    const bufferData = buffersQueue.shift();
 
-    // Create buffer source and play
+    // Create AudioBuffer for playback
+    const audioBuffer = audioCtx.createBuffer(1, bufferData.length, sampleRate);
+    audioBuffer.copyToChannel(bufferData, 0);
+
     const source = audioCtx.createBufferSource();
-    source.buffer = buffer;
+    source.buffer = audioBuffer;
+
+    // Connect to gain node for volume control
     source.connect(micGainNode);
+
     source.start();
 
-    // Schedule next play after chunk duration
-    const duration = buffer.duration;
-    setTimeout(playDelayedMic, duration * 1000);
+    // Schedule next playback in bufferSize/sampleRate seconds
+    setTimeout(playDelayedMic, (bufferSize / sampleRate) * 1000);
   }
 
-  playDelayedMic();
+  // Start delayed playback loop after delayTime
+  setTimeout(playDelayedMic, delayTime);
 
-  // Analyze speech every 10 seconds to choose CAT audio
-  setInterval(() => {
-    let catToPlay = 1;
-    if (wordCount === 0) catToPlay = 1;
-    else if (wordCount <= 3) catToPlay = 2;
-    else catToPlay = 3;
+  // --- Speech Recognition setup ---
+  // Use Web Speech API (SpeechRecognition)
+  // SpeechRecognition runs independently, doesn't have access to raw mic audio.
+  // We run recognition every ~10 seconds to get transcript and count words.
+  // We'll restart recognition after each result.
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    statusEl.textContent = 'SpeechRecognition API not supported by your browser.';
+    return;
+  }
 
-    playCatAudio(catToPlay);
-  }, 10000);
+  const recognizer = new SpeechRecognition();
+  recognizer.continuous = false;
+  recognizer.interimResults = false;
+  recognizer.lang = 'en-US';
 
-  // Start initial CAT audio
-  playCatAudio(1);
+  let isRecognizing = false;
+  let lastTranscript = '';
 
-  // Unlock audio context on first user interaction
-  function unlockAudio() {
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
+  function startRecognition() {
+    if (isRecognizing) return;
+    isRecognizing = true;
+    recognizer.start();
+  }
+  recognizer.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    lastTranscript = transcript;
+    isRecognizing = false;
+    startRecognition(); // restart for continuous detection
+    processTranscript(transcript);
+  };
+  recognizer.onerror = (e) => {
+    // On error, restart recognition
+    isRecognizing = false;
+    startRecognition();
+  };
+  recognizer.onend = () => {
+    isRecognizing = false;
+    startRecognition();
+  };
+
+  startRecognition();
+
+  // --- Cat audio logic ---
+
+  // Load CAT audio buffers
+  const catBuffers = {};
+  async function loadCats() {
+    catBuffers.CAT1 = await loadAudioBuffer('CAT1.mp3');
+    catBuffers.CAT2 = await loadAudioBuffer('CAT2.mp3');
+    catBuffers.CAT3 = await loadAudioBuffer('CAT3.mp3');
+  }
+
+  await loadCats();
+
+  // Cat playback nodes and control
+  let catSource = null;
+  let catGain = audioCtx.createGain();
+  catGain.gain.value = catVolumeSlider.value;
+  catGain.connect(audioCtx.destination);
+
+  // Function to stop current cat audio source
+  function stopCatAudio() {
+    if (catSource) {
+      try {
+        catSource.stop();
+      } catch {}
+      catSource.disconnect();
+      catSource = null;
     }
-    window.removeEventListener('click', unlockAudio);
   }
-  window.addEventListener('click', unlockAudio);
+
+  // Play cat audio buffer with dynamic pitch and volume based on mic volume
+  function playCatAudio(catBuffer) {
+    stopCatAudio();
+
+    catSource = audioCtx.createBufferSource();
+    catSource.buffer = catBuffer;
+
+    // Dynamic pitch variation based on micGainNode gain (inverse, for example)
+    // Let's get current mic gain value:
+    let micGainVal = micGainNode.gain.value;
+    // Clamp pitch between 0.8 and 1.2 based on micGainVal (higher mic gain → lower pitch)
+    let pitch = 1 - ((micGainVal - 1) * 0.1);
+    if (pitch < 0.8) pitch = 0.8;
+    if (pitch > 1.2) pitch = 1.2;
+
+    catSource.playbackRate.value = pitch;
+
+    catSource.connect(catGain);
+    catSource.loop = true;
+    catSource.start();
+  }
+
+  // On volume slider change
+  catVolumeSlider.oninput = () => {
+    catGain.gain.value = catVolumeSlider.value;
+  };
+
+  // Process transcript to count words and select cat audio
+  function processTranscript(text) {
+    if (!text || text.trim() === '') {
+      // No words detected → CAT1
+      playCatAudio(catBuffers.CAT1);
+      statusEl.textContent = 'No words detected → Playing CAT1';
+      return;
+    }
+    const words = text.trim().split(/\s+/);
+    if (words.length <= 3) {
+      playCatAudio(catBuffers.CAT2);
+      statusEl.textContent = `Few words (${words.length}) → Playing CAT2`;
+      return;
+    }
+    if (words.length > 3) {
+      playCatAudio(catBuffers.CAT3);
+      statusEl.textContent = `Many words (${words.length}) → Playing CAT3`;
+      return;
+    }
+  }
+
+  statusEl.textContent = 'Ready. Listening and playing...';
 })();
 </script>
 </body>
 </html>
-
 
 
