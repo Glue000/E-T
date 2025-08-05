@@ -1,127 +1,186 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Mic Delay + CAT Response</title>
-  <style>
-    body {
-      background: #111;
-      color: white;
-      font-family: sans-serif;
-      text-align: center;
-      padding: 20px;
-    }
-    button {
-      font-size: 18px;
-      padding: 10px 20px;
-      margin-bottom: 20px;
-    }
-    input[type="range"] {
-      width: 80%;
-    }
-    label {
-      display: block;
-      margin-top: 20px;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mic Delay + Dynamic Background MP3 + CAT Audio</title>
+<style>
+  body {
+    background: #111;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 20px;
+  }
+  button, label {
+    font-size: 1.2em;
+    margin: 10px;
+  }
+  input[type=range] {
+    width: 200px;
+    vertical-align: middle;
+  }
+</style>
 </head>
 <body>
 
-  <h1>Mic Delay + CAT Audio01</h1>
-  <button id="startBtn">Démarrer</button>
+<h2>Mic Delay with Dynamic Background MP3 and CAT Audio</h2>
 
-  <label for="micVol">Volume micro</label>
-  <input type="range" id="micVol" min="0" max="0.7" step="0.01" value="0.3" />
+<button id="startBtn">Start</button><br/>
 
-  <label for="catVol">Volume CAT</label>
-  <input type="range" id="catVol" min="0" max="0.7" step="0.01" value="0.3" />
+<label for="boostSlider">Mic Volume Boost:</label>
+<input type="range" id="boostSlider" min="0.1" max="5" step="0.1" value="1" />
+<span id="boostValue">1.0</span>x
 
-  <script>
-    const startBtn = document.getElementById('startBtn');
-    const micVolSlider = document.getElementById('micVol');
-    const catVolSlider = document.getElementById('catVol');
+<script>
+(async () => {
+  const startBtn = document.getElementById('startBtn');
+  const boostSlider = document.getElementById('boostSlider');
+  const boostValue = document.getElementById('boostValue');
 
-    let audioCtx, gainNodeMic, gainNodeCat;
-    let catAudio = new Audio();
-    catAudio.loop = true;
-    let currentCat = "";
+  let audioCtx, micStream, sourceNode, delayNode, gainNodeMic, gainNodeBG, bgAudio, catAudio;
+  let analyserNode, dataArray;
+  let delayedMicGainValue = 1;
+  let catPlaying = false;
+  let catTimeout;
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognizer = new SpeechRecognition();
-    recognizer.lang = 'fr-FR';
-    recognizer.continuous = true;
-    recognizer.interimResults = false;
+  // Audio file URLs (replace with your actual mp3 URLs or relative paths)
+  const BG_MP3_URL = 'background.mp3'; // Your background MP3 file
+  const CAT1_URL = 'CAT1.mp3';
+  const CAT2_URL = 'CAT2.mp3';
+  const CAT3_URL = 'CAT3.mp3';
 
-    startBtn.onclick = async () => {
-      startBtn.disabled = true;
-      audioCtx = new AudioContext();
+  boostSlider.oninput = () => {
+    boostValue.textContent = boostSlider.value;
+  };
 
-      // Micro avec délai
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const micSource = audioCtx.createMediaStreamSource(stream);
+  startBtn.onclick = async () => {
+    startBtn.disabled = true;
+    await startAudioProcess();
+  };
 
-      const delay = audioCtx.createDelay(5.0);
-      delay.delayTime.value = 3.0;
+  async function startAudioProcess() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-      gainNodeMic = audioCtx.createGain();
-      gainNodeMic.gain.value = parseFloat(micVolSlider.value);
+    // Get mic stream
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    sourceNode = audioCtx.createMediaStreamSource(micStream);
 
-      micSource.connect(delay);
-      delay.connect(gainNodeMic);
-      gainNodeMic.connect(audioCtx.destination);
+    // Gain node for mic volume control and boost
+    gainNodeMic = audioCtx.createGain();
 
-      // Cat audio routing
-      gainNodeCat = audioCtx.createGain();
-      gainNodeCat.gain.value = parseFloat(catVolSlider.value);
+    // Delay node for 3s delay on mic playback
+    delayNode = audioCtx.createDelay(5.0);
+    delayNode.delayTime.value = 3.0;
 
-      const catSource = audioCtx.createMediaElementSource(catAudio);
-      catSource.connect(gainNodeCat);
-      gainNodeCat.connect(audioCtx.destination);
+    // Analyser to measure delayed mic volume
+    analyserNode = audioCtx.createAnalyser();
+    analyserNode.fftSize = 256;
+    const bufferLength = analyserNode.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
 
-      micVolSlider.oninput = () => {
-        gainNodeMic.gain.value = parseFloat(micVolSlider.value);
+    // Connect mic source -> gainNodeMic -> delayNode -> analyserNode -> output
+    sourceNode.connect(gainNodeMic);
+    gainNodeMic.connect(delayNode);
+    delayNode.connect(analyserNode);
+
+    // Create destination gain node for mic playback volume
+    // and connect analyserNode to gainNodeMicOutput -> destination
+    const gainNodeMicOutput = audioCtx.createGain();
+    analyserNode.connect(gainNodeMicOutput);
+    gainNodeMicOutput.connect(audioCtx.destination);
+
+    // Background MP3 setup with gain and playbackRate (for pitch control)
+    bgAudio = new Audio(BG_MP3_URL);
+    bgAudio.loop = true;
+    await bgAudio.play().catch(() => {}); // play must be async called after user interaction
+    const bgSourceNode = audioCtx.createMediaElementSource(bgAudio);
+
+    gainNodeBG = audioCtx.createGain();
+    bgSourceNode.connect(gainNodeBG).connect(audioCtx.destination);
+
+    // CAT audio element
+    catAudio = new Audio();
+    catAudio.loop = false;
+
+    // Main loop: analyze volume and update audio volumes and pitch
+    function update() {
+      analyserNode.getByteTimeDomainData(dataArray);
+
+      // Compute RMS volume of delayed mic
+      let sumSquares = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        let normalized = (dataArray[i] - 128) / 128; // normalize to [-1,1]
+        sumSquares += normalized * normalized;
+      }
+      const rms = Math.sqrt(sumSquares / dataArray.length);
+
+      // Boost mic gain: if low volume, boost, if high volume, reduce
+      // Here, use RMS threshold to map boost between 0.2 to 3
+      let targetGain = 1;
+      if (rms < 0.05) targetGain = 3;  // low volume → high boost
+      else if (rms > 0.2) targetGain = 0.4; // high volume → lower gain
+      else targetGain = 1; // medium volume → normal
+
+      // Multiply by user slider
+      targetGain *= parseFloat(boostSlider.value);
+
+      // Smooth transition for gain to avoid clicks
+      gainNodeMic.gain.linearRampToValueAtTime(targetGain, audioCtx.currentTime + 0.1);
+
+      // Change background MP3 pitch and volume based on rms
+      // Pitch between 0.8 and 1.2, volume between 0.1 and 1.0
+      if (!catPlaying) {
+        const bgPitch = 0.8 + Math.min(rms * 5, 1) * 0.4; // 0.8 to 1.2
+        const bgVol = 0.1 + Math.min(rms * 10, 1) * 0.9;  // 0.1 to 1.0
+        bgAudio.playbackRate = bgPitch;
+        gainNodeBG.gain.linearRampToValueAtTime(bgVol, audioCtx.currentTime + 0.1);
+      }
+
+      // Decide CAT audio based on volume categories
+      // Thresholds are rms < 0.05 (little), 0.05-0.12 (medium), >0.12 (high)
+      let chosenCatUrl = null;
+      if (rms < 0.05) chosenCatUrl = CAT1_URL;
+      else if (rms < 0.12) chosenCatUrl = CAT2_URL;
+      else chosenCatUrl = CAT3_URL;
+
+      // If CAT not playing or different CAT needed, play CAT
+      if (!catPlaying || (catAudio.src !== chosenCatUrl)) {
+        playCatAudio(chosenCatUrl);
+      }
+
+      requestAnimationFrame(update);
+    }
+
+    function playCatAudio(url) {
+      if (catTimeout) {
+        clearTimeout(catTimeout);
+        catTimeout = null;
+      }
+
+      catPlaying = true;
+      catAudio.pause();
+      catAudio.src = url;
+      catAudio.currentTime = 0;
+      catAudio.play();
+
+      // Lower background music volume immediately
+      gainNodeBG.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
+
+      catAudio.onended = () => {
+        catPlaying = false;
+        // Restore background music volume smoothly after CAT ends
+        gainNodeBG.gain.linearRampToValueAtTime(1.0, audioCtx.currentTime + 0.5);
       };
-      catVolSlider.oninput = () => {
-        gainNodeCat.gain.value = parseFloat(catVolSlider.value);
-      };
+    }
 
-      // Lancer reconnaissance vocale
-      recognizer.start();
-
-      recognizer.onresult = (event) => {
-        let transcript = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            transcript += event.results[i][0].transcript + " ";
-          }
-        }
-
-        let words = transcript.trim().split(/\s+/).filter(w => w.length > 0);
-        let count = words.length;
-
-        let selectedCat = "";
-        if (count === 0) selectedCat = "CAT1.mp3";
-        else if (count <= 3) selectedCat = "CAT2.mp3";
-        else selectedCat = "CAT3.mp3";
-
-        if (selectedCat !== currentCat) {
-          catAudio.pause();
-          catAudio.src = selectedCat;
-          catAudio.currentTime = 0;
-          catAudio.play();
-          currentCat = selectedCat;
-        }
-      };
-
-      recognizer.onerror = (e) => {
-        console.warn("Erreur reco:", e.error);
-        recognizer.stop();
-        setTimeout(() => recognizer.start(), 500);
-      };
-    };
-  </script>
+    update();
+  }
+})();
+</script>
 
 </body>
 </html>
+
 
 
