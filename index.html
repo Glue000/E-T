@@ -5,204 +5,216 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Mic Delay + Cat Audio Player</title>
 <style>
-  body { background: #111; color: #eee; font-family: sans-serif; padding: 1rem; }
-  button { font-size: 1.2rem; padding: 0.5rem 1rem; margin-bottom: 1rem; cursor: pointer; }
-  label { display: block; margin: 1rem 0 0.2rem; }
-  input[type=range] { width: 100%; }
-  #status { margin-top: 1rem; font-size: 1rem; }
+  body {
+    background: #111;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 2rem;
+  }
+  button {
+    font-size: 1.2rem;
+    padding: 0.6rem 1.2rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+  }
+  label {
+    display: block;
+    margin-top: 1rem;
+  }
+  input[type=range] {
+    width: 80%;
+    margin-top: 0.5rem;
+  }
 </style>
 </head>
 <body>
 
-<button id="startBtn">Start Mic & Audio</button>
+<h1>Mic Delay + Cat Audio Player</h1>
 
-<label for="micVol">Mic Playback Volume</label>
-<input type="range" id="micVol" min="0" max="2" step="0.01" value="1" />
+<button id="startBtn">Start</button>
 
-<label for="catVol">Background Cat Audio Volume</label>
-<input type="range" id="catVol" min="0" max="1" step="0.01" value="0.5" />
-
-<div id="status">Status: Waiting to start...</div>
+<div>
+  <label for="micVol">Mic Playback Volume</label>
+  <input type="range" id="micVol" min="0" max="2" step="0.01" value="1" />
+</div>
+<div>
+  <label for="catVol">Cat Audio Volume</label>
+  <input type="range" id="catVol" min="0" max="2" step="0.01" value="1" />
+</div>
 
 <script>
 (async () => {
   const startBtn = document.getElementById('startBtn');
   const micVolSlider = document.getElementById('micVol');
   const catVolSlider = document.getElementById('catVol');
-  const statusDiv = document.getElementById('status');
 
-  let audioCtx, micStream, micSource, micGainNode, delayNode, delayBuffer, delayWritePos = 0;
-  let micOutputGainNode;
+  let audioCtx, micSource, delayNode, gainNodeMic, gainNodeCat;
+  let micStream;
+  let micPlaybackNode;
   let catAudio = new Audio();
   catAudio.loop = true;
 
-  let dynamicMicGain = 1;
-  let analyzingInterval;
-  let speechRecognizer;
-  let isRunning = false;
+  // Speech recognition setup (Chrome supports window.SpeechRecognition)
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert("Speech Recognition API not supported in this browser.");
+    startBtn.disabled = true;
+    return;
+  }
+  const recognizer = new SpeechRecognition();
+  recognizer.lang = 'en-US';
+  recognizer.continuous = true;
+  recognizer.interimResults = false;
 
-  // Constants
-  const delaySeconds = 3;
-  const sampleRate = 44100; // standard
+  // Variables to hold last recognized transcript
+  let lastTranscript = '';
 
-  // Audio buffers for delay
-  let delayBufferSize;
+  // Audio nodes for mic
+  function createAudioGraph(stream) {
+    audioCtx = new AudioContext();
 
-  // State
-  let catPlaying = null;
+    micSource = audioCtx.createMediaStreamSource(stream);
 
-  startBtn.onclick = startSystem;
+    // Create delay node for 3 second delay
+    delayNode = audioCtx.createDelay(5.0);
+    delayNode.delayTime.value = 3.0;
 
+    // Gain node for mic playback volume
+    gainNodeMic = audioCtx.createGain();
+    gainNodeMic.gain.value = micVolSlider.value;
+
+    // Connect: mic source -> delay -> gain -> destination
+    micSource.connect(delayNode);
+    delayNode.connect(gainNodeMic);
+    gainNodeMic.connect(audioCtx.destination);
+
+    // Cat audio gain node
+    gainNodeCat = audioCtx.createGain();
+    gainNodeCat.gain.value = catVolSlider.value;
+
+    // Connect cat audio element to audio context destination with gain
+    const catAudioSource = audioCtx.createMediaElementSource(catAudio);
+    catAudioSource.connect(gainNodeCat);
+    gainNodeCat.connect(audioCtx.destination);
+  }
+
+  // Dynamic volume control for mic playback (amplify if low volume)
+  let analyser, dataArray;
+  function setupVolumeAnalyser() {
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    const bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
+
+    // Insert analyser between delay node and gainNodeMic
+    delayNode.disconnect();
+    delayNode.connect(analyser);
+    analyser.connect(gainNodeMic);
+  }
+
+  function getAverageVolume() {
+    analyser.getByteFrequencyData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sum += dataArray[i];
+    }
+    return sum / dataArray.length / 255; // normalized 0-1
+  }
+
+  // Adjust mic gain dynamically based on volume
+  function adjustMicVolume() {
+    if (!gainNodeMic) return;
+    let avgVol = getAverageVolume();
+    // If very low volume (<0.05), amplify up to 2x
+    if (avgVol < 0.05) {
+      gainNodeMic.gain.value = Math.min(2, micVolSlider.value * 4);
+    } else if (avgVol < 0.15) {
+      gainNodeMic.gain.value = Math.min(2, micVolSlider.value * 2);
+    } else {
+      gainNodeMic.gain.value = micVolSlider.value;
+    }
+  }
+
+  // Set volumes on slider input
   micVolSlider.oninput = () => {
-    if (micOutputGainNode) micOutputGainNode.gain.setValueAtTime(micVolSlider.value, audioCtx.currentTime);
+    if (gainNodeMic) gainNodeMic.gain.value = micVolSlider.value;
   };
   catVolSlider.oninput = () => {
-    catAudio.volume = catVolSlider.value;
+    if (gainNodeCat) gainNodeCat.gain.value = catVolSlider.value;
   };
 
-  async function startSystem() {
-    if (isRunning) return;
-    isRunning = true;
-    statusDiv.textContent = 'Status: Starting...';
-
-    // Setup audio context
-    audioCtx = new AudioContext();
-    delayBufferSize = sampleRate * delaySeconds;
-
+  // Start speech recognition and audio processing
+  startBtn.onclick = async () => {
+    startBtn.disabled = true;
+    // Get mic stream
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch(e) {
-      statusDiv.textContent = 'Error: Cannot access mic.';
-      console.error(e);
+    } catch (err) {
+      alert('Error accessing microphone: ' + err.message);
       return;
     }
 
-    // Create source & nodes
-    micSource = audioCtx.createMediaStreamSource(micStream);
-    micGainNode = audioCtx.createGain(); // For dynamic mic gain boost
-    micOutputGainNode = audioCtx.createGain(); // For user volume control
+    createAudioGraph(micStream);
+    setupVolumeAnalyser();
 
-    // Delay buffer to simulate 3s delay manually with ScriptProcessorNode (deprecated but easier here)
-    // We'll use AudioWorklet if we want modern approach, but for simplicity:
-    // Using a ScriptProcessorNode:
-    const bufferSize = 4096;
-    const delayProcessor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
-    delayBuffer = new Float32Array(delayBufferSize);
-    delayWritePos = 0;
+    // Start cat audio default with CAT1
+    catAudio.src = 'CAT1.mp3';
+    catAudio.play();
 
-    micSource.connect(micGainNode);
-    micGainNode.connect(delayProcessor);
-    delayProcessor.connect(micOutputGainNode);
-    micOutputGainNode.connect(audioCtx.destination);
-    micOutputGainNode.gain.setValueAtTime(micVolSlider.value, audioCtx.currentTime);
+    // Start speech recognition
+    recognizer.start();
 
-    // Process audio for delay manually
-    delayProcessor.onaudioprocess = (e) => {
-      const input = e.inputBuffer.getChannelData(0);
-      const output = e.outputBuffer.getChannelData(0);
+    // Every 10 seconds, evaluate last transcript word count
+    setInterval(() => {
+      let transcript = lastTranscript.trim();
+      let wordCount = transcript === '' ? 0 : transcript.split(/\s+/).length;
 
-      for (let i = 0; i < input.length; i++) {
-        // Write input to delayBuffer
-        delayBuffer[delayWritePos] = input[i];
-        delayWritePos = (delayWritePos + 1) % delayBufferSize;
+      let catToPlay;
+      if (wordCount === 0) catToPlay = 'CAT1.mp3';
+      else if (wordCount <= 3) catToPlay = 'CAT2.mp3';
+      else catToPlay = 'CAT3.mp3';
+
+      if (catAudio.src.indexOf(catToPlay) === -1) {
+        // Replace cat audio source & restart
+        catAudio.pause();
+        catAudio.src = catToPlay;
+        catAudio.currentTime = 0;
+        catAudio.play();
       }
 
-      // Calculate read position (3 seconds behind)
-      let readPos = delayWritePos;
-      // Output delayed sample
-      for (let i = 0; i < output.length; i++) {
-        output[i] = delayBuffer[readPos];
-        readPos = (readPos + 1) % delayBufferSize;
+      // Reset lastTranscript for next period
+      lastTranscript = '';
+    }, 10000);
+
+    // On speech recognition result, update transcript
+    recognizer.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          lastTranscript += event.results[i][0].transcript + ' ';
+        }
       }
-
-      // Calculate RMS volume for input buffer to adjust dynamic gain
-      let rms = 0;
-      for (let i = 0; i < input.length; i++) rms += input[i] * input[i];
-      rms = Math.sqrt(rms / input.length);
-
-      // Adjust dynamic gain: boost if rms < 0.02, max boost 6x (2.0)
-      const targetGain = rms < 0.02 ? 2.0 : 1.0;
-      // Smooth gain adjustment
-      dynamicMicGain += (targetGain - dynamicMicGain) * 0.05;
-      micGainNode.gain.setTargetAtTime(dynamicMicGain, audioCtx.currentTime, 0.1);
     };
 
-    // Setup Speech Recognition every 10 seconds
-    setupSpeechRecognition();
+    recognizer.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      // Restart recognizer if it stops
+      if (event.error === 'no-speech' || event.error === 'network' || event.error === 'not-allowed') {
+        recognizer.stop();
+        setTimeout(() => recognizer.start(), 1000);
+      }
+    };
 
-    statusDiv.textContent = 'Status: Running. Speak now.';
-    startBtn.disabled = true;
-  }
-
-  function setupSpeechRecognition() {
-    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      statusDiv.textContent = 'Speech Recognition API not supported in this browser.';
-      return;
+    // Continually adjust mic volume dynamically
+    function volumeLoop() {
+      adjustMicVolume();
+      requestAnimationFrame(volumeLoop);
     }
-
-    // Use webkit prefix if available
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    speechRecognizer = new SpeechRecognition();
-
-    speechRecognizer.continuous = false;
-    speechRecognizer.interimResults = false;
-    speechRecognizer.lang = 'en-US';
-
-    // Run recognition every 10 seconds on micStream
-    function recognizeSpeech() {
-      if (!isRunning) return;
-
-      speechRecognizer.start();
-
-      speechRecognizer.onresult = (event) => {
-        if (!event.results || event.results.length === 0) return;
-        const transcript = event.results[0][0].transcript.trim();
-        const wordCount = transcript === '' ? 0 : transcript.split(/\s+/).length;
-
-        statusDiv.textContent = `Heard: "${transcript}" (${wordCount} words)`;
-
-        // Decide cat audio to play
-        let catFile = null;
-        if (wordCount === 0) catFile = 'CAT1.mp3';
-        else if (wordCount <= 3) catFile = 'CAT2.mp3';
-        else catFile = 'CAT3.mp3';
-
-        playCatAudio(catFile);
-      };
-
-      speechRecognizer.onerror = (e) => {
-        console.log('Speech recognition error:', e.error);
-        // If error, play CAT1
-        playCatAudio('CAT1.mp3');
-      };
-
-      // Schedule next recognition after 10 seconds
-      setTimeout(() => {
-        if (speechRecognizer) speechRecognizer.stop();
-        setTimeout(() => {
-          recognizeSpeech();
-        }, 100);
-      }, 10000);
-    }
-
-    recognizeSpeech();
-  }
-
-  function playCatAudio(filename) {
-    if (catPlaying === filename) return; // same audio, do nothing
-
-    catAudio.src = filename;
-    catAudio.volume = catVolSlider.value;
-    catAudio.loop = true;
-    catAudio.play().catch(e => {
-      console.warn('Failed to play cat audio:', e);
-    });
-    catPlaying = filename;
-  }
+    volumeLoop();
+  };
 })();
 </script>
 
 </body>
 </html>
-
 
